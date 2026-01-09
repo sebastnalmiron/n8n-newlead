@@ -29,7 +29,7 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 
 You need a Newlead account and API credentials:
 
-1. Sign up at https://newlead.ai
+1. Sign up at https://dashboard.newlead.ai
 2. Get your API credentials from the platform settings
 3. Configure the Newlead API credentials in n8n with your API key
 
