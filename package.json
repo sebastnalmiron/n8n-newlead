@@ -1,6 +1,6 @@
 {
     "name": "n8n-nodes-newlead",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "N8N community node for Newlead Platform - send templates, manage leads, control AI responses",
     "license": "MIT",
     "homepage": "https://newlead.ai",
