@@ -6,6 +6,34 @@ import type {
 	ILoadOptionsFunctions,
 } from 'n8n-workflow';
 
+function normalizeOptionValue(value: unknown): string {
+	if (typeof value === 'string') return value.trim();
+	if (value && typeof value === 'object') {
+		const v = (value as IDataObject).value;
+		if (typeof v === 'string') return v.trim();
+	}
+	return '';
+}
+
+function extractArrayFromResponse(response: IDataObject): IDataObject[] {
+	const candidates: unknown[] = [
+		response.templates,
+		(response.data as IDataObject | undefined)?.templates,
+		response.data,
+		response.items,
+		response.results,
+		response,
+	];
+
+	for (const candidate of candidates) {
+		if (Array.isArray(candidate)) {
+			return candidate as IDataObject[];
+		}
+	}
+
+	return [];
+}
+
 /**
  * Make an API request to Newlead
  */
@@ -96,9 +124,10 @@ export async function getBots(
  */
 export async function getTemplates(
 	this: ILoadOptionsFunctions,
-	botId: string,
+	botId: string | IDataObject,
 ): Promise<Array<{ name: string; value: string; description?: string }>> {
-	if (!botId) {
+	const resolvedBotId = normalizeOptionValue(botId);
+	if (!resolvedBotId) {
 		return [];
 	}
 
@@ -106,22 +135,41 @@ export async function getTemplates(
 		const response = (await newleadApiRequest.call(
 			this,
 			'GET',
-			`/bots/${botId}/templates`,
+			`/bots/${resolvedBotId}/templates`,
 		)) as IDataObject;
 
-		const templates = (response.templates || response.data || response) as IDataObject[];
+		const templates = extractArrayFromResponse(response);
+		const approvedTemplates = templates.filter((t: IDataObject) => {
+			const rawStatus = (t.template_status ?? t.status ?? '') as string;
+			return String(rawStatus).trim().toUpperCase() === 'APPROVED';
+		});
+		const templatesToRender = approvedTemplates.length > 0 ? approvedTemplates : templates;
 
-		if (!Array.isArray(templates)) {
-			return [];
+		const options: Array<{ name: string; value: string; description?: string }> = [];
+		for (const template of templatesToRender) {
+			const templateName = String(template.template_name ?? template.name ?? '').trim();
+			const templateLanguage = String(
+				template.language ?? template.template_language ?? '',
+			).trim();
+			const templateStatus = String(
+				template.template_status ?? template.status ?? 'UNKNOWN',
+			)
+				.trim()
+				.toUpperCase();
+			const category = String(template.category ?? 'uncategorized');
+
+			if (!templateName || !templateLanguage) {
+				continue;
+			}
+
+			options.push({
+				name: `${templateName} (${templateLanguage})`,
+				value: `${templateName}|${templateLanguage}`,
+				description: `${category} - ${templateStatus}`,
+			});
 		}
 
-		return templates
-			.filter((t: IDataObject) => t.template_status === 'APPROVED')
-			.map((template: IDataObject) => ({
-				name: `${template.template_name} (${template.language})`,
-				value: `${template.template_name}|${template.language}`,
-				description: `${template.category} - ${template.template_status}`,
-			}));
+		return options;
 	} catch {
 		return [];
 	}
