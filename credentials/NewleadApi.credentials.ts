@@ -46,6 +46,9 @@ export class NewleadApi implements ICredentialType {
 			baseURL: '={{$credentials.baseUrl}}',
 			url: '/bots',
 			method: 'GET',
+			headers: {
+				'x-api-key': '={{$credentials.apiKey}}',
+			},
 		},
 	};
 }
