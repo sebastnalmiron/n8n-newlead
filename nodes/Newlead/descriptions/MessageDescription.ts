@@ -15,7 +15,7 @@ export const messageOperations: INodeProperties[] = [
 			{
 				name: 'Send',
 				value: 'send',
-				description: 'Send a manual text message to a lead',
+				description: 'Send a manual text message to a lead (WhatsApp or Instagram)',
 				action: 'Send a message',
 			},
 		],
@@ -49,14 +49,14 @@ export const messageFields: INodeProperties[] = [
 		type: 'string',
 		required: true,
 		default: '',
-		placeholder: 'lead_123456 or 5491123456789',
+		placeholder: 'lead_123456 or 5491123456789 (phone for WhatsApp)',
 		displayOptions: {
 			show: {
 				resource: ['message'],
 				operation: ['send'],
 			},
 		},
-		description: 'Enter either a Lead ID or phone number with country code (e.g., 5491123456789)',
+		description: 'Enter a Lead ID (works for any channel) or phone number with country code for WhatsApp (e.g., 5491123456789)',
 	},
 	// Message
 	{

@@ -15,7 +15,7 @@ export const templateOperations: INodeProperties[] = [
 			{
 				name: 'Send',
 				value: 'send',
-				description: 'Send a WhatsApp template message',
+				description: 'Send a WhatsApp template message (WhatsApp only)',
 				action: 'Send a template message',
 			},
 		],

@@ -30,7 +30,7 @@ export class Newlead implements INodeType {
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-		description: 'Interact with Newlead WhatsApp Platform API',
+		description: 'Interact with Newlead Platform API (WhatsApp, Instagram & more)',
 		defaults: {
 			name: 'Newlead',
 		},
@@ -54,12 +54,12 @@ export class Newlead implements INodeType {
 					{
 						name: 'Template',
 						value: 'template',
-						description: 'Send WhatsApp template messages',
+						description: 'Send WhatsApp template messages (WhatsApp only)',
 					},
 					{
 						name: 'Message',
 						value: 'message',
-						description: 'Send manual text messages',
+						description: 'Send manual text messages (WhatsApp & Instagram)',
 					},
 					{
 						name: 'Lead',
