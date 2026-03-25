@@ -113,9 +113,8 @@ export async function getBots(
 			name: (bot.name as string) || 'Unnamed Bot',
 			value: (bot.bot_id as string) || (bot.id as string),
 		}));
-	} catch {
-		// Return empty array on error - n8n will show "No data"
-		return [];
+	} catch (error) {
+		throw new Error(`Failed to load bots: ${(error as Error).message}`);
 	}
 }
 
