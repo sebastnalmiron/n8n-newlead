@@ -100,6 +100,21 @@ export const leadFields: INodeProperties[] = [
 					},
 				],
 			},
+			{
+				displayName: 'By WhatsApp ID',
+				name: 'bsuid',
+				type: 'string',
+				placeholder: 'US.1349…',
+				validation: [
+					{
+						type: 'regex',
+						properties: {
+							regex: '^[A-Za-z]{2}[.][A-Za-z0-9]+$',
+							errorMessage: 'Not a valid WhatsApp ID (e.g. US.1349…)',
+						},
+					},
+				],
+			},
 		],
 		displayOptions: {
 			show: {
@@ -107,7 +122,7 @@ export const leadFields: INodeProperties[] = [
 				operation: ['get', 'update'],
 			},
 		},
-		description: 'Select the lead by name, ID, or phone number',
+		description: 'Select the lead by name, ID, phone number, or WhatsApp ID (Business-Scoped User ID, e.g. US.1349…)',
 	},
 	// Update Fields
 	{
