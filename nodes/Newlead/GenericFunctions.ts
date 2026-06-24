@@ -198,12 +198,19 @@ export async function getLeads(
 			return [];
 		}
 
-		return leads.map((lead: IDataObject) => ({
-			name: lead.name
-				? `${lead.name} (${lead.phone_number})`
-				: (lead.phone_number as string),
-			value: lead.lead_id as string,
-		}));
+		return leads.map((lead: IDataObject) => {
+			// Prefer phone, then @username; never surface a raw BSUID in the picker.
+			const identifier =
+				(lead.phone_number as string) || (lead.username ? `@${lead.username as string}` : '');
+			return {
+				name: lead.name
+					? identifier
+						? `${lead.name} (${identifier})`
+						: (lead.name as string)
+					: identifier || (lead.lead_id as string),
+				value: lead.lead_id as string,
+			};
+		});
 	} catch {
 		return [];
 	}

@@ -44,19 +44,19 @@ export const messageFields: INodeProperties[] = [
 	},
 	// Lead or Phone Number
 	{
-		displayName: 'Lead ID or Phone Number',
+		displayName: 'Lead ID, Phone or WhatsApp ID',
 		name: 'leadIdOrPhone',
 		type: 'string',
 		required: true,
 		default: '',
-		placeholder: 'lead_123456 or 5491123456789 (phone for WhatsApp)',
+		placeholder: 'lead_123456, 5491123456789, or US.1349… (WhatsApp ID)',
 		displayOptions: {
 			show: {
 				resource: ['message'],
 				operation: ['send'],
 			},
 		},
-		description: 'Enter a Lead ID (works for any channel) or phone number with country code for WhatsApp (e.g., 5491123456789)',
+		description: 'Enter a Lead ID (any channel), a phone number with country code for WhatsApp (e.g. 5491123456789), or a WhatsApp Business-Scoped User ID (e.g. US.1349…) for username-only contacts',
 	},
 	// Message
 	{
