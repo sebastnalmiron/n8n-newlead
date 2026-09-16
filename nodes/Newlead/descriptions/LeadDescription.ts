@@ -237,7 +237,7 @@ export const leadFields: INodeProperties[] = [
 						name: 'value',
 						type: 'string',
 						default: '',
-						description: 'Variable value',
+						description: 'Variable value. Rows with an empty value are skipped.',
 					},
 				],
 			},
