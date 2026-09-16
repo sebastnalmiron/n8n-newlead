@@ -528,4 +528,70 @@ export const templateFields: INodeProperties[] = [
 		],
 		description: 'Template components (header, body variables, buttons)',
 	},
+	// Conversation start options
+	{
+		displayName: 'Dynamic Variables',
+		name: 'dynamicVariables',
+		type: 'fixedCollection',
+		typeOptions: {
+			multipleValues: true,
+		},
+		default: {},
+		placeholder: 'Add Variable',
+		displayOptions: {
+			show: {
+				resource: ['template'],
+				operation: ['send'],
+			},
+		},
+		options: [
+			{
+				displayName: 'Variable',
+				name: 'variables',
+				values: [
+					{
+						displayName: 'Key',
+						name: 'key',
+						type: 'string',
+						default: '',
+						description: 'Variable name. Use the same name as the "field name" of a qualification question to answer it automatically.',
+					},
+					{
+						displayName: 'Value',
+						name: 'value',
+						type: 'string',
+						default: '',
+						description: 'Variable value. Rows with an empty value are skipped.',
+					},
+				],
+			},
+		],
+		description: 'Values saved on the lead before the conversation starts. Variables with other names are kept.',
+	},
+	{
+		displayName: 'Manual Mode',
+		name: 'manualMode',
+		type: 'boolean',
+		default: false,
+		displayOptions: {
+			show: {
+				resource: ['template'],
+				operation: ['send'],
+			},
+		},
+		description: 'Whether to keep the AI paused for this lead so a person handles the conversation',
+	},
+	{
+		displayName: 'Clear Previous Chat',
+		name: 'clearPreviousChat',
+		type: 'boolean',
+		default: false,
+		displayOptions: {
+			show: {
+				resource: ['template'],
+				operation: ['send'],
+			},
+		},
+		description: 'Whether to start from scratch: hide previous messages and reset the summary, qualification, variables and follow-ups. The lead keeps its ID, name and phone.',
+	},
 ];

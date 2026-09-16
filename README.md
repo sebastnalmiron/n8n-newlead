@@ -20,10 +20,14 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 
 ## Operations
 
-- Send WhatsApp templates
-- Manage leads
-- Control AI responses
-- List and manage conversations
+- **Template → Send**: send an approved WhatsApp template. Options:
+  - **Dynamic Variables**: values saved on the lead before the conversation starts. A qualification question whose "field name" matches a key is answered automatically.
+  - **Manual Mode**: keep the AI paused so a person handles the conversation.
+  - **Clear Previous Chat**: start the lead from scratch (previous messages hidden; summary, qualification, variables and follow-ups reset). The lead keeps its ID, name and phone.
+- **Message → Send**: send a manual text message (WhatsApp & Instagram).
+- **Lead → Create**: create a lead, or update it if the phone already exists in the bot.
+- **Lead → Get / Get Many / Update**: read leads and update name, status and dynamic variables (only the listed variables change).
+- **AI Control → Pause / Resume / Get Status**: control the AI for a lead (pause duration in minutes, 0 = indefinite).
 
 ## Credentials
 
@@ -50,6 +54,13 @@ For new n8n users, check out the [Try it out](https://docs.n8n.io/try-it-out/) d
 * [Newlead Documentation](https://newlead.ai)
 
 ## Version history
+
+### 0.6.0
+- Template → Send: Dynamic Variables, Manual Mode and Clear Previous Chat
+- Lead → Create
+- Lead → Update keeps the variables that are not listed
+- AI Control → Pause works again (minutes, 0 = indefinite)
+- WhatsApp ID (BSUID) support for message send and lead lookup
 
 ### 0.1.0
 - Initial release

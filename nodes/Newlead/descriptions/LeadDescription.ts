@@ -13,6 +13,12 @@ export const leadOperations: INodeProperties[] = [
 		},
 		options: [
 			{
+				name: 'Create',
+				value: 'create',
+				description: 'Create a lead, or update it if the phone already exists in the bot',
+				action: 'Create a lead',
+			},
+			{
 				name: 'Get',
 				value: 'get',
 				description: 'Get a lead by ID',
@@ -27,7 +33,7 @@ export const leadOperations: INodeProperties[] = [
 			{
 				name: 'Update',
 				value: 'update',
-				description: 'Update a lead (name, status, dynamic variables)',
+				description: 'Update a lead (name, status, and add or change dynamic variables)',
 				action: 'Update a lead',
 			},
 		],
@@ -124,6 +130,44 @@ export const leadFields: INodeProperties[] = [
 		},
 		description: 'Select the lead by name, ID, phone number, or WhatsApp ID (Business-Scoped User ID, e.g. US.1349…)',
 	},
+	// Create
+	{
+		displayName: 'Phone Number',
+		name: 'phoneNumber',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: '5491123456789',
+		displayOptions: {
+			show: {
+				resource: ['lead'],
+				operation: ['create'],
+			},
+		},
+		description: 'Phone number with country code. If a lead with this phone already exists in the bot, it is updated instead of duplicated.',
+	},
+	{
+		displayName: 'Additional Fields',
+		name: 'additionalFields',
+		type: 'collection',
+		placeholder: 'Add Field',
+		default: {},
+		displayOptions: {
+			show: {
+				resource: ['lead'],
+				operation: ['create'],
+			},
+		},
+		options: [
+			{
+				displayName: 'Name',
+				name: 'name',
+				type: 'string',
+				default: '',
+				description: 'Lead name',
+			},
+		],
+	},
 	// Update Fields
 	{
 		displayName: 'Update Fields',
@@ -173,7 +217,7 @@ export const leadFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: ['lead'],
-				operation: ['update'],
+				operation: ['create', 'update'],
 			},
 		},
 		options: [
@@ -198,7 +242,7 @@ export const leadFields: INodeProperties[] = [
 				],
 			},
 		],
-		description: 'Custom dynamic variables stored on the lead',
+		description: 'Custom variables stored on the lead. Only the listed ones are added or changed; the rest are kept.',
 	},
 	// Get Many Options
 	{

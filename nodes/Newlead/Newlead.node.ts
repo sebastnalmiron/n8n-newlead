@@ -15,6 +15,7 @@ import {
 	getTemplates,
 	getLeads,
 	buildTemplateComponentsFromUnified,
+	buildDynamicVariables,
 } from './GenericFunctions';
 
 import { templateOperations, templateFields } from './descriptions/TemplateDescription';
@@ -158,6 +159,19 @@ export class Newlead implements INodeType {
 							body.components = components;
 						}
 
+						const dynamicVariables = buildDynamicVariables(
+							this.getNodeParameter('dynamicVariables.variables', i, []) as IDataObject[],
+						);
+						if (dynamicVariables) {
+							body.dynamic_variables = dynamicVariables;
+						}
+						if (this.getNodeParameter('manualMode', i, false) as boolean) {
+							body.manual = true;
+						}
+						if (this.getNodeParameter('clearPreviousChat', i, false) as boolean) {
+							body.reset_conversation = true;
+						}
+
 						responseData = (await newleadApiRequest.call(
 							this,
 							'POST',
@@ -197,28 +211,42 @@ export class Newlead implements INodeType {
 							{},
 							query,
 						)) as IDataObject;
+					} else if (operation === 'create') {
+						const phoneNumber = this.getNodeParameter('phoneNumber', i) as string;
+						const additionalFields = this.getNodeParameter('additionalFields', i, {}) as IDataObject;
+
+						const body: IDataObject = { phone_number: phoneNumber };
+						if (additionalFields.name) {
+							body.name = additionalFields.name;
+						}
+						const dynamicVariables = buildDynamicVariables(
+							this.getNodeParameter('dynamicVariables.variables', i, []) as IDataObject[],
+						);
+						if (dynamicVariables) {
+							body.dynamic_variables = dynamicVariables;
+						}
+
+						responseData = (await newleadApiRequest.call(
+							this,
+							'POST',
+							`/bots/${botId}/leads`,
+							body,
+						)) as IDataObject;
 					} else if (operation === 'update') {
 						const leadIdResource = this.getNodeParameter('leadId', i) as IDataObject;
 						const leadId = leadIdResource.value as string;
 
 						const updateFields = this.getNodeParameter('updateFields', i, {}) as IDataObject;
-						const dynamicVarsRaw = this.getNodeParameter(
-							'dynamicVariables.variables',
-							i,
-							[],
-						) as IDataObject[];
 
 						const body: IDataObject = { ...updateFields };
 
-						// Build dynamic variables object
-						if (dynamicVarsRaw.length > 0) {
-							const dynamicVariables: IDataObject = {};
-							for (const v of dynamicVarsRaw) {
-								if (v.key) {
-									dynamicVariables[v.key as string] = v.value;
-								}
-							}
+						const dynamicVariables = buildDynamicVariables(
+							this.getNodeParameter('dynamicVariables.variables', i, []) as IDataObject[],
+						);
+						if (dynamicVariables) {
 							body.dynamic_variables = dynamicVariables;
+							// Only the listed variables change; the rest stay on the lead.
+							body.dynamic_variables_mode = 'merge';
 						}
 
 						responseData = (await newleadApiRequest.call(
@@ -259,10 +287,8 @@ export class Newlead implements INodeType {
 					if (operation === 'pause') {
 						const pauseOptions = this.getNodeParameter('pauseOptions', i, {}) as IDataObject;
 
-						const body: IDataObject = {};
-						if (pauseOptions.durationMin) {
-							body.duration_min = pauseOptions.durationMin;
-						}
+						// 0 = indefinite. The API accepts `duration_min` since 2026-09-16.
+						const body: IDataObject = { duration_min: Number(pauseOptions.durationMin ?? 0) };
 						if (pauseOptions.reason) {
 							body.reason = pauseOptions.reason;
 						}
