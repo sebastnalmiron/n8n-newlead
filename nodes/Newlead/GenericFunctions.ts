@@ -430,16 +430,19 @@ export function buildTemplateComponents(
 }
 
 /**
- * Key/value rows → `dynamic_variables`. Rows with an empty key or value are
- * skipped: an expression that resolves to nothing must not wipe a value the
- * lead already has. Returns undefined when nothing is left to send.
+ * Key/value rows → `dynamic_variables`. Rows with an empty key, an undefined
+ * or null value, or a whitespace-only string value are skipped: an expression
+ * that resolves to nothing must not wipe a value the lead already has.
+ * Numbers and booleans (including 0 and false) are kept as-is. Returns
+ * undefined when nothing is left to send.
  */
 export function buildDynamicVariables(rows: IDataObject[]): IDataObject | undefined {
 	const variables: IDataObject = {};
 	for (const row of rows) {
-		const key = typeof row.key === 'string' ? row.key.trim() : '';
+		const key = String(row.key ?? '').trim();
 		const value = row.value;
-		if (!key || value === undefined || value === null || value === '') continue;
+		if (!key || value === undefined || value === null) continue;
+		if (typeof value === 'string' && value.trim() === '') continue;
 		variables[key] = value;
 	}
 	return Object.keys(variables).length > 0 ? variables : undefined;

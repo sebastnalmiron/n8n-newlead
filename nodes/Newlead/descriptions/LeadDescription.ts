@@ -115,7 +115,7 @@ export const leadFields: INodeProperties[] = [
 					{
 						type: 'regex',
 						properties: {
-							regex: '^[A-Za-z]{2}[.][A-Za-z0-9]+$',
+							regex: '^[A-Z]{2}[.][A-Za-z0-9]+$',
 							errorMessage: 'Not a valid WhatsApp ID (e.g. US.1349…)',
 						},
 					},

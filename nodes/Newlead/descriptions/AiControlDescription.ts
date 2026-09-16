@@ -102,6 +102,11 @@ export const aiControlFields: INodeProperties[] = [
 				displayName: 'Duration (Minutes)',
 				name: 'durationMin',
 				type: 'number',
+				typeOptions: {
+					minValue: 0,
+					maxValue: 525600,
+					numberPrecision: 0,
+				},
 				default: 0,
 				description: 'Pause duration in minutes (0 = indefinite)',
 			},

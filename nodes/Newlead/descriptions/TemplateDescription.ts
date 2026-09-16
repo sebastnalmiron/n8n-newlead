@@ -554,7 +554,7 @@ export const templateFields: INodeProperties[] = [
 						name: 'key',
 						type: 'string',
 						default: '',
-						description: 'Variable name. Use the same name as the "field name" of a qualification question to answer it automatically.',
+						description: 'Variable name. A qualification question set to fill from a lead variable with this same name uses it instead of asking (if the value fits the question type).',
 					},
 					{
 						displayName: 'Value',
@@ -566,7 +566,7 @@ export const templateFields: INodeProperties[] = [
 				],
 			},
 		],
-		description: 'Values saved on the lead before the conversation starts. Variables with other names are kept.',
+		description: 'Values saved on the lead before the conversation starts. Variables with other names are kept, unless Clear Previous Chat is on.',
 	},
 	{
 		displayName: 'Manual Mode',
@@ -592,6 +592,6 @@ export const templateFields: INodeProperties[] = [
 				operation: ['send'],
 			},
 		},
-		description: 'Whether to start from scratch: hide previous messages and reset the summary, qualification, variables and follow-ups. The lead keeps its ID, name and phone.',
+		description: 'Whether to start from scratch: hide previous messages and reset the summary, qualification, variables and follow-ups. The lead keeps its ID, name and phone. Unless Manual Mode is on, the AI is switched back on.',
 	},
 ];

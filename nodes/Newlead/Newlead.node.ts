@@ -8,6 +8,7 @@ import type {
 	INodeTypeDescription,
 	INodeListSearchResult,
 } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 
 import {
 	newleadApiRequest,
@@ -264,13 +265,21 @@ export class Newlead implements INodeType {
 				else if (resource === 'message') {
 					if (operation === 'send') {
 						const botId = this.getNodeParameter('botId', i) as string;
-						const leadIdOrPhone = this.getNodeParameter('leadIdOrPhone', i) as string;
+						const leadIdOrPhone = (this.getNodeParameter('leadIdOrPhone', i) as string).trim();
 						const message = this.getNodeParameter('message', i) as string;
+
+						if (!leadIdOrPhone) {
+							throw new NodeOperationError(
+								this.getNode(),
+								'Lead ID, phone or WhatsApp ID is required',
+								{ itemIndex: i },
+							);
+						}
 
 						responseData = (await newleadApiRequest.call(
 							this,
 							'POST',
-							`/bots/${botId}/leads/${leadIdOrPhone}/messages/manual`,
+							`/bots/${botId}/leads/${encodeURIComponent(leadIdOrPhone)}/messages/manual`,
 							{ message },
 						)) as IDataObject;
 					}
@@ -287,8 +296,11 @@ export class Newlead implements INodeType {
 					if (operation === 'pause') {
 						const pauseOptions = this.getNodeParameter('pauseOptions', i, {}) as IDataObject;
 
-						// 0 = indefinite. The API accepts `duration_min` since 2026-09-16.
-						const body: IDataObject = { duration_min: Number(pauseOptions.durationMin ?? 0) };
+						// 0 = indefinite.
+						const minutes = Number(pauseOptions.durationMin ?? 0);
+						const body: IDataObject = {
+							duration_min: Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes) : 0,
+						};
 						if (pauseOptions.reason) {
 							body.reason = pauseOptions.reason;
 						}

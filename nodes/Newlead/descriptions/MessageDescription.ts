@@ -56,7 +56,7 @@ export const messageFields: INodeProperties[] = [
 				operation: ['send'],
 			},
 		},
-		description: 'Enter a Lead ID (any channel), a phone number with country code for WhatsApp (e.g. 5491123456789), or a WhatsApp Business-Scoped User ID (e.g. US.1349…) for username-only contacts.',
+		description: 'Enter a Lead ID (any channel), a phone number with country code for WhatsApp (e.g. 5491123456789), or the WhatsApp ID (e.g. US.1349…) of a lead that already exists in this bot. The lead still needs a phone number to receive WhatsApp messages.',
 	},
 	// Message
 	{
