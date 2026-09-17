@@ -202,12 +202,12 @@ export async function getLeads(
 			// Prefer phone, then @username; never surface a raw BSUID in the picker.
 			const identifier =
 				(lead.phone_number as string) || (lead.username ? `@${lead.username as string}` : '');
+			const name =
+				lead.name && identifier
+					? `${lead.name} (${identifier})`
+					: (lead.name as string) || identifier || (lead.lead_id as string);
 			return {
-				name: lead.name
-					? identifier
-						? `${lead.name} (${identifier})`
-						: (lead.name as string)
-					: identifier || (lead.lead_id as string),
+				name,
 				value: lead.lead_id as string,
 			};
 		});
@@ -436,7 +436,7 @@ export function buildTemplateComponents(
  * Numbers and booleans (including 0 and false) are kept as-is. Returns
  * undefined when nothing is left to send.
  */
-export function buildDynamicVariables(rows: IDataObject[]): IDataObject | undefined {
+function buildDynamicVariables(rows: IDataObject[]): IDataObject | undefined {
 	const variables: IDataObject = {};
 	for (const row of rows) {
 		const key = String(row.key ?? '').trim();
@@ -446,4 +446,17 @@ export function buildDynamicVariables(rows: IDataObject[]): IDataObject | undefi
 		variables[key] = value;
 	}
 	return Object.keys(variables).length > 0 ? variables : undefined;
+}
+
+/**
+ * Reads the `dynamicVariables.variables` fixedCollection for the current item
+ * and builds the `dynamic_variables` payload from it.
+ */
+export function getDynamicVariables(
+	this: IExecuteFunctions,
+	itemIndex: number,
+): IDataObject | undefined {
+	return buildDynamicVariables(
+		this.getNodeParameter('dynamicVariables.variables', itemIndex, []) as IDataObject[],
+	);
 }

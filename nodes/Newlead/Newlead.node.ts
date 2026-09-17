@@ -16,7 +16,7 @@ import {
 	getTemplates,
 	getLeads,
 	buildTemplateComponentsFromUnified,
-	buildDynamicVariables,
+	getDynamicVariables,
 } from './GenericFunctions';
 
 import { templateOperations, templateFields } from './descriptions/TemplateDescription';
@@ -160,9 +160,7 @@ export class Newlead implements INodeType {
 							body.components = components;
 						}
 
-						const dynamicVariables = buildDynamicVariables(
-							this.getNodeParameter('dynamicVariables.variables', i, []) as IDataObject[],
-						);
+						const dynamicVariables = getDynamicVariables.call(this, i);
 						if (dynamicVariables) {
 							body.dynamic_variables = dynamicVariables;
 						}
@@ -220,9 +218,7 @@ export class Newlead implements INodeType {
 						if (additionalFields.name) {
 							body.name = additionalFields.name;
 						}
-						const dynamicVariables = buildDynamicVariables(
-							this.getNodeParameter('dynamicVariables.variables', i, []) as IDataObject[],
-						);
+						const dynamicVariables = getDynamicVariables.call(this, i);
 						if (dynamicVariables) {
 							body.dynamic_variables = dynamicVariables;
 						}
@@ -241,9 +237,7 @@ export class Newlead implements INodeType {
 
 						const body: IDataObject = { ...updateFields };
 
-						const dynamicVariables = buildDynamicVariables(
-							this.getNodeParameter('dynamicVariables.variables', i, []) as IDataObject[],
-						);
+						const dynamicVariables = getDynamicVariables.call(this, i);
 						if (dynamicVariables) {
 							body.dynamic_variables = dynamicVariables;
 							// Only the listed variables change; the rest stay on the lead.

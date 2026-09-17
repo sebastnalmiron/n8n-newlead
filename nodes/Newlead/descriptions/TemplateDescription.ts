@@ -1,5 +1,7 @@
 import type { INodeProperties } from 'n8n-workflow';
 
+import { dynamicVariablesField } from './shared';
+
 export const templateOperations: INodeProperties[] = [
 	{
 		displayName: 'Operation',
@@ -529,45 +531,15 @@ export const templateFields: INodeProperties[] = [
 		description: 'Template components (header, body variables, buttons)',
 	},
 	// Conversation start options
-	{
-		displayName: 'Dynamic Variables',
-		name: 'dynamicVariables',
-		type: 'fixedCollection',
-		typeOptions: {
-			multipleValues: true,
+	dynamicVariablesField({
+		show: {
+			resource: ['template'],
+			operation: ['send'],
 		},
-		default: {},
-		placeholder: 'Add Variable',
-		displayOptions: {
-			show: {
-				resource: ['template'],
-				operation: ['send'],
-			},
-		},
-		options: [
-			{
-				displayName: 'Variable',
-				name: 'variables',
-				values: [
-					{
-						displayName: 'Key',
-						name: 'key',
-						type: 'string',
-						default: '',
-						description: 'Variable name. A qualification question set to fill from a lead variable with this same name uses it instead of asking (if the value fits the question type).',
-					},
-					{
-						displayName: 'Value',
-						name: 'value',
-						type: 'string',
-						default: '',
-						description: 'Variable value. Rows with an empty value are skipped.',
-					},
-				],
-			},
-		],
 		description: 'Values saved on the lead before the conversation starts. Variables with other names are kept, unless Clear Previous Chat is on.',
-	},
+		keyDescription: 'Variable name. A qualification question set to fill from a lead variable with this same name uses it instead of asking (if the value fits the question type).',
+		valueDescription: 'Variable value. Rows with an empty value are skipped.',
+	}),
 	{
 		displayName: 'Manual Mode',
 		name: 'manualMode',

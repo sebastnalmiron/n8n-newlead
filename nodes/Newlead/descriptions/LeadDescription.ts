@@ -1,5 +1,7 @@
 import type { INodeProperties } from 'n8n-workflow';
 
+import { dynamicVariablesField } from './shared';
+
 export const leadOperations: INodeProperties[] = [
 	{
 		displayName: 'Operation',
@@ -205,45 +207,15 @@ export const leadFields: INodeProperties[] = [
 		],
 	},
 	// Dynamic Variables
-	{
-		displayName: 'Dynamic Variables',
-		name: 'dynamicVariables',
-		type: 'fixedCollection',
-		typeOptions: {
-			multipleValues: true,
+	dynamicVariablesField({
+		show: {
+			resource: ['lead'],
+			operation: ['create', 'update'],
 		},
-		default: {},
-		placeholder: 'Add Variable',
-		displayOptions: {
-			show: {
-				resource: ['lead'],
-				operation: ['create', 'update'],
-			},
-		},
-		options: [
-			{
-				displayName: 'Variable',
-				name: 'variables',
-				values: [
-					{
-						displayName: 'Key',
-						name: 'key',
-						type: 'string',
-						default: '',
-						description: 'Variable name',
-					},
-					{
-						displayName: 'Value',
-						name: 'value',
-						type: 'string',
-						default: '',
-						description: 'Variable value. Rows with an empty value are skipped.',
-					},
-				],
-			},
-		],
 		description: 'Custom variables stored on the lead. Only the listed ones are added or changed; the rest are kept.',
-	},
+		keyDescription: 'Variable name',
+		valueDescription: 'Variable value. Rows with an empty value are skipped.',
+	}),
 	// Get Many Options
 	{
 		displayName: 'Options',
