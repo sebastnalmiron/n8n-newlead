@@ -4,7 +4,9 @@ import type {
 	IHttpRequestMethods,
 	IHttpRequestOptions,
 	ILoadOptionsFunctions,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 function normalizeOptionValue(value: unknown): string {
 	if (typeof value === 'string') return value.trim();
@@ -85,12 +87,11 @@ export async function newleadApiRequest(
 			
 			if (body && typeof body === 'object' && body.error && typeof body.error === 'string') {
 				// Replace the generic error with the backend's detailed message
-				throw new Error(body.error);
+				throw new NodeApiError(this.getNode(), err as JsonObject, { message: body.error });
 			}
 		}
 
-		// If we couldn't extract a better message, throw original
-		throw error;
+		throw new NodeApiError(this.getNode(), err as JsonObject);
 	}
 }
 
@@ -114,7 +115,7 @@ export async function getBots(
 			value: (bot.bot_id as string) || (bot.id as string),
 		}));
 	} catch (error) {
-		throw new Error(`Failed to load bots: ${(error as Error).message}`);
+		throw new NodeOperationError(this.getNode(), `Failed to load bots: ${(error as Error).message}`);
 	}
 }
 

@@ -7,8 +7,9 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 	INodeListSearchResult,
+	JsonObject,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 import {
 	newleadApiRequest,
@@ -36,8 +37,8 @@ export class Newlead implements INodeType {
 		defaults: {
 			name: 'Newlead',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		usableAsTool: true,
 		credentials: [
 			{
@@ -336,7 +337,10 @@ export class Newlead implements INodeType {
 					});
 					continue;
 				}
-				throw error;
+				// API errors keep their HTTP details; anything else becomes a node error.
+				throw error instanceof NodeApiError
+					? new NodeApiError(this.getNode(), error as unknown as JsonObject, { itemIndex: i })
+					: new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
 			}
 		}
 
