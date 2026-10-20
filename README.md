@@ -59,7 +59,7 @@ For new n8n users, check out the [Try it out](https://docs.n8n.io/try-it-out/) d
 
 ## Version history
 
-### Unreleased
+### 0.7.0
 - Property → Get by Reference (properties imported from Idealista), with Simplify for template variables
 - Resources listed alphabetically in the node
 
