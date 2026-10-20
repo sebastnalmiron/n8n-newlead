@@ -461,3 +461,42 @@ export function getDynamicVariables(
 		this.getNodeParameter('dynamicVariables.variables', itemIndex, []) as IDataObject[],
 	);
 }
+
+/**
+ * GET /properties/lookup → flat fields for template variables. `found` is true
+ * only when exactly one property matches (`status: unique`); with several
+ * (`few`) or none, the property fields stay empty and `status` says why.
+ * Internal agent notes are left out on purpose: they are never sent to leads.
+ */
+export function simplifyPropertyLookup(response: IDataObject): IDataObject {
+	const result = ((response.data as IDataObject | undefined) ?? response) as IDataObject;
+	const property = (result.property as IDataObject | undefined) ?? {};
+	const operations = (property.operations as IDataObject[] | undefined) ?? [];
+	const priceOf = (operation: string) =>
+		(operations.find((item) => item.operation === operation)?.price as string | undefined) ?? null;
+	const salesAgent = (property.sales_agent as IDataObject | null | undefined) ?? null;
+	const candidates = (result.candidates as IDataObject[] | undefined) ?? [];
+	return {
+		found: result.status === 'unique',
+		status: result.status,
+		reference: property.reference ?? null,
+		internal_reference: property.internal_reference ?? null,
+		available: property.available ?? null,
+		summary: property.summary ?? null,
+		property_type: property.property_type ?? null,
+		city: property.city ?? null,
+		address: property.address ?? null,
+		bedrooms: property.bedrooms ?? null,
+		bathrooms: property.bathrooms ?? null,
+		built_m2: property.built_m2 ?? null,
+		price_sale: priceOf('sale'),
+		price_rent: priceOf('rent'),
+		features: property.features ?? null,
+		description: property.description ?? null,
+		url: property.url ?? null,
+		sales_agent_name: salesAgent?.name ?? null,
+		sales_agent_phone: salesAgent?.phone ?? null,
+		visit_hours: property.visit_hours ?? null,
+		candidates_count: candidates.length,
+	};
+}

@@ -18,12 +18,14 @@ import {
 	getLeads,
 	buildTemplateComponentsFromUnified,
 	getDynamicVariables,
+	simplifyPropertyLookup,
 } from './GenericFunctions';
 
 import { templateOperations, templateFields } from './descriptions/TemplateDescription';
 import { leadOperations, leadFields } from './descriptions/LeadDescription';
 import { messageOperations, messageFields } from './descriptions/MessageDescription';
 import { aiControlOperations, aiControlFields } from './descriptions/AiControlDescription';
+import { propertyOperations, propertyFields } from './descriptions/PropertyDescription';
 
 export class Newlead implements INodeType {
 	description: INodeTypeDescription = {
@@ -55,14 +57,9 @@ export class Newlead implements INodeType {
 				noDataExpression: true,
 				options: [
 					{
-						name: 'Template',
-						value: 'template',
-						description: 'Send WhatsApp template messages (WhatsApp only)',
-					},
-					{
-						name: 'Message',
-						value: 'message',
-						description: 'Send manual text messages (WhatsApp & Instagram)',
+						name: 'AI Control',
+						value: 'aiControl',
+						description: 'Control AI automatic responses',
 					},
 					{
 						name: 'Lead',
@@ -70,9 +67,19 @@ export class Newlead implements INodeType {
 						description: 'Manage leads',
 					},
 					{
-						name: 'AI Control',
-						value: 'aiControl',
-						description: 'Control AI automatic responses',
+						name: 'Message',
+						value: 'message',
+						description: 'Send manual text messages (WhatsApp & Instagram)',
+					},
+					{
+						name: 'Property',
+						value: 'property',
+						description: 'Look up the subaccount properties imported from Idealista',
+					},
+					{
+						name: 'Template',
+						value: 'template',
+						description: 'Send WhatsApp template messages (WhatsApp only)',
 					},
 				],
 				default: 'template',
@@ -86,6 +93,8 @@ export class Newlead implements INodeType {
 			...messageFields,
 			...aiControlOperations,
 			...aiControlFields,
+			...propertyOperations,
+			...propertyFields,
 		],
 	};
 
@@ -318,6 +327,30 @@ export class Newlead implements INodeType {
 							'GET',
 							`/bots/${botId}/leads/${leadId}/ai-status`,
 						)) as IDataObject;
+					}
+				}
+
+				// ===================
+				// PROPERTY OPERATIONS
+				// ===================
+				else if (resource === 'property') {
+					if (operation === 'getByReference') {
+						const reference = (this.getNodeParameter('reference', i) as string).trim();
+						if (!reference) {
+							throw new NodeOperationError(this.getNode(), 'Reference is required', {
+								itemIndex: i,
+							});
+						}
+						const response = (await newleadApiRequest.call(
+							this,
+							'GET',
+							'/properties/lookup',
+							{},
+							{ reference },
+						)) as IDataObject;
+						responseData = (this.getNodeParameter('simplify', i, true) as boolean)
+							? simplifyPropertyLookup(response)
+							: response;
 					}
 				}
 
