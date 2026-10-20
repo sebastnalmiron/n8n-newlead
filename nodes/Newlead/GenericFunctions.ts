@@ -467,21 +467,29 @@ export function getDynamicVariables(
  * only when exactly one property matches (`status: unique`); with several
  * (`few`) or none, the property fields stay empty and `status` says why.
  * Internal agent notes are left out on purpose: they are never sent to leads.
+ *
+ * `operation` is the one whose listing code matched the reference (or the only
+ * one); `reference`, `url` and `price` are that listing's. Each operation also
+ * gets its own code and URL. If the matched listing is no longer published
+ * while another one of the property is, `available` is false and `price` null.
  */
 export function simplifyPropertyLookup(response: IDataObject): IDataObject {
 	const result = ((response.data as IDataObject | undefined) ?? response) as IDataObject;
 	const property = (result.property as IDataObject | undefined) ?? {};
 	const operations = (property.operations as IDataObject[] | undefined) ?? [];
-	const priceOf = (operation: string) =>
-		(operations.find((item) => item.operation === operation)?.price as string | undefined) ?? null;
+	const listingOf = (operation: unknown) => operations.find((item) => item.operation === operation);
+	const fieldOf = (operation: unknown, field: string) => listingOf(operation)?.[field] ?? null;
+	const matched = (property.matched_operation as string | null | undefined) ?? null;
+	const matchedGone = matched !== null && listingOf(matched) === undefined;
 	const salesAgent = (property.sales_agent as IDataObject | null | undefined) ?? null;
 	const candidates = (result.candidates as IDataObject[] | undefined) ?? [];
 	return {
 		found: result.status === 'unique',
 		status: result.status,
+		operation: matched,
 		reference: property.reference ?? null,
 		internal_reference: property.internal_reference ?? null,
-		available: property.available ?? null,
+		available: property.available === undefined ? null : property.available === true && !matchedGone,
 		summary: property.summary ?? null,
 		property_type: property.property_type ?? null,
 		city: property.city ?? null,
@@ -489,11 +497,16 @@ export function simplifyPropertyLookup(response: IDataObject): IDataObject {
 		bedrooms: property.bedrooms ?? null,
 		bathrooms: property.bathrooms ?? null,
 		built_m2: property.built_m2 ?? null,
-		price_sale: priceOf('sale'),
-		price_rent: priceOf('rent'),
+		price: fieldOf(matched, 'price'),
+		price_sale: fieldOf('sale', 'price'),
+		price_rent: fieldOf('rent', 'price'),
+		reference_sale: fieldOf('sale', 'reference'),
+		reference_rent: fieldOf('rent', 'reference'),
 		features: property.features ?? null,
 		description: property.description ?? null,
 		url: property.url ?? null,
+		url_sale: fieldOf('sale', 'url'),
+		url_rent: fieldOf('rent', 'url'),
 		sales_agent_name: salesAgent?.name ?? null,
 		sales_agent_phone: salesAgent?.phone ?? null,
 		visit_hours: property.visit_hours ?? null,

@@ -31,7 +31,7 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 - **Lead → Get / Update**: accept a Lead ID, phone number, or WhatsApp ID to locate the lead; update name, status and dynamic variables (only the listed variables change).
 - **Lead → Get Many**: read all leads from a bot.
 - **AI Control → Pause / Resume / Get Status**: control the AI for a lead. Unlike Lead → Get/Update, this only takes a Lead ID (from the list or typed manually) — phone number and WhatsApp ID are not offered here.
-- **Property → Get by Reference**: find a property of the subaccount (imported from Idealista) by its Idealista listing code — full or its last 3+ digits — or the agency internal reference. With **Simplify** on (default), the output is flat and ready for template variables: `found` (exactly one match), `status` (`unique`, `few`, `many` or `none`), `summary`, `price_sale`, `price_rent`, `address`, `city`, `url`, `sales_agent_name`, `sales_agent_phone`, `visit_hours`, `candidates_count`… Internal agent notes are never included. Needs an API key created inside a subaccount with an Idealista account connected.
+- **Property → Get by Reference**: find a property of the subaccount (imported from Idealista) by its Idealista listing code — full or its last 3+ digits — or the agency internal reference. With **Simplify** on (default), the output is flat and ready for template variables: `found` (exactly one match), `status` (`unique`, `few`, `many` or `none`), `operation` (`sale` or `rent`: the one whose listing code matched the reference), `reference`, `price` and `url` of that listing, `reference_sale`/`reference_rent`, `price_sale`/`price_rent`, `url_sale`/`url_rent`, `summary`, `address`, `city`, `sales_agent_name`, `sales_agent_phone`, `visit_hours`, `candidates_count`… Internal agent notes are never included. Needs an API key created inside a subaccount with an Idealista account connected.
 
 ## Credentials
 
@@ -58,6 +58,9 @@ For new n8n users, check out the [Try it out](https://docs.n8n.io/try-it-out/) d
 * [Newlead Documentation](https://newlead.ai)
 
 ## Version history
+
+### 0.8.0
+- Property → Get by Reference: each operation (sale and rent) with its own Idealista code and URL, and `operation` tells which one the reference matched
 
 ### 0.7.0
 - Property → Get by Reference (properties imported from Idealista), with Simplify for template variables
