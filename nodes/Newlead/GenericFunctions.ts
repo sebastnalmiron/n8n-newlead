@@ -493,6 +493,7 @@ export function simplifyPropertyLookup(response: IDataObject): IDataObject {
 		summary: property.summary ?? null,
 		property_type: property.property_type ?? null,
 		city: property.city ?? null,
+		province: property.province ?? null,
 		address: property.address ?? null,
 		bedrooms: property.bedrooms ?? null,
 		bathrooms: property.bathrooms ?? null,
