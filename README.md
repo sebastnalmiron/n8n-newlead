@@ -24,6 +24,7 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
   - **Dynamic Variables**: values saved on the lead before the conversation starts. A qualification question set to fill from a lead variable with the same name uses it instead of asking (if the value fits the question type).
   - **Manual Mode**: keep the AI paused so a person handles the conversation.
   - **Clear Previous Chat**: start the lead from scratch (previous messages hidden; summary, qualification, variables and follow-ups reset). The lead keeps its ID, name and phone. Unless Manual Mode is on, the AI is switched back on.
+  - **Source Lead ID**: ID of the lead this contact comes from (e.g. the web chat they called from). The lead that receives the template is joined to that person.
 
   After sending, check `data.warnings`, `data.ai_mode` and `data.conversation_reset` in the output to confirm what actually happened for this lead; warnings do not fail the node — the template was already sent.
 - **Message → Send**: send a manual text message (WhatsApp & Instagram). Accepts a Lead ID, a phone number, or the WhatsApp ID of a lead that already exists in the bot.
@@ -58,6 +59,9 @@ For new n8n users, check out the [Try it out](https://docs.n8n.io/try-it-out/) d
 * [Newlead Documentation](https://newlead.ai)
 
 ## Version history
+
+### 0.10.0
+- Template → Send: **Source Lead ID** joins the lead that receives the template to the person of another lead (e.g. the web chat they called from)
 
 ### 0.9.0
 - Property → Get by Reference: `province` of the property, next to `city` (the municipality)

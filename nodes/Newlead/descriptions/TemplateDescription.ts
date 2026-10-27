@@ -566,4 +566,17 @@ export const templateFields: INodeProperties[] = [
 		},
 		description: 'Whether to start from scratch: hide previous messages and reset the summary, qualification, variables and follow-ups. The lead keeps its ID, name and phone. Unless Manual Mode is on, the AI is switched back on.',
 	},
+	{
+		displayName: 'Source Lead ID',
+		name: 'linkLeadId',
+		type: 'string',
+		default: '',
+		displayOptions: {
+			show: {
+				resource: ['template'],
+				operation: ['send'],
+			},
+		},
+		description: 'ID of the lead this contact comes from (e.g. the web chat they called from). The lead that receives the template is joined to that person.',
+	},
 ];

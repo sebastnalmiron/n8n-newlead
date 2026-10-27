@@ -180,6 +180,10 @@ export class Newlead implements INodeType {
 						if (this.getNodeParameter('clearPreviousChat', i, false) as boolean) {
 							body.reset_conversation = true;
 						}
+						const linkLeadId = this.getNodeParameter('linkLeadId', i, '') as string;
+						if (linkLeadId) {
+							body.link_lead_id = linkLeadId;
+						}
 
 						responseData = (await newleadApiRequest.call(
 							this,
