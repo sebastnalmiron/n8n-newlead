@@ -1,4 +1,4 @@
-import { NodeApiError, type IDataObject, type INode } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError, type IDataObject, type INode } from 'n8n-workflow';
 import { describe, expect, it, vi } from 'vitest';
 
 import { v1Request, v1RequestAll } from '../nodes/Newlead/v2/transport';
@@ -75,12 +75,23 @@ describe('v1Request', () => {
 		});
 	});
 
-	it('keeps the original error when there is no API error body', async () => {
-		const thrown = new NodeApiError(node, { message: 'socket hang up' } as never);
+	it('turns a plain network error into a NodeApiError that keeps the original text', async () => {
+		const thrown = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
 		const { context } = setup(() => Promise.reject(thrown));
 		const error = await v1Request.call(context, 'GET', '/leads').catch((e: unknown) => e);
-		expect(error).toBe(thrown);
-		expect((error as NodeApiError).message).toBe(thrown.message);
+		expect(error).toBeInstanceOf(NodeApiError);
+		// n8n words ECONNRESET its own way and keeps the original text in `messages`
+		expect((error as NodeApiError).messages).toContain('read ECONNRESET');
+		expect((error as NodeApiError).message).not.toBe('');
+	});
+
+	it('does not double the slash when the base URL ends with one', async () => {
+		const { context, request } = setup(async () => ({}));
+		(context as unknown as { getCredentials: { mockResolvedValue: (v: unknown) => void } }).getCredentials.mockResolvedValue({
+			baseUrl: 'https://rest.newlead.ai/',
+		});
+		await v1Request.call(context, 'GET', '/leads');
+		expect(request.mock.calls[0][1]).toMatchObject({ url: 'https://rest.newlead.ai/v1/leads' });
 	});
 });
 
@@ -98,15 +109,20 @@ describe('v1RequestAll', () => {
 		});
 	});
 
-	it('stops if has_more is true but there is no next_cursor', async () => {
+	it('fails if has_more is true but there is no next_cursor', async () => {
 		const { context, request } = pages([{ data: [{ id: 1 }], has_more: true, next_cursor: null }]);
-		expect(await v1RequestAll.call(context, '/leads')).toEqual([{ id: 1 }]);
+		const error = await v1RequestAll.call(context, '/leads').catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(NodeOperationError);
+		expect((error as Error).message).toContain('Pagination was interrupted');
+		expect((error as Error).message).toContain('/leads');
 		expect(request).toHaveBeenCalledTimes(1);
 	});
 
-	it('stops if the API repeats a cursor', async () => {
+	it('fails if the API repeats a cursor', async () => {
 		const { context, request } = pages([{ data: [{ id: 1 }], has_more: true, next_cursor: 'same' }]);
-		expect(await v1RequestAll.call(context, '/leads')).toEqual([{ id: 1 }, { id: 1 }]);
+		const error = await v1RequestAll.call(context, '/leads').catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(NodeOperationError);
+		expect((error as Error).message).toContain('/leads');
 		expect(request).toHaveBeenCalledTimes(2);
 	});
 });

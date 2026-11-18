@@ -204,7 +204,7 @@ const templateProperties: INodeProperties[] = [
 						displayName: 'Button Index',
 						name: 'index',
 						type: 'number',
-						typeOptions: { minValue: 0, maxValue: 9 },
+						typeOptions: { minValue: 0, maxValue: 9, numberPrecision: 0 },
 						default: 0,
 					},
 					{
@@ -286,7 +286,7 @@ const leadProperties: INodeProperties[] = [
 			{
 				name: 'Create',
 				value: 'create',
-				description: 'Create a lead, or return it if the phone already exists in the agent',
+				description: 'Create a lead; if the agent already has a lead with that phone, update it instead (a new name replaces the old one, variables are merged)',
 				action: 'Create a lead',
 			},
 			{ name: 'Get', value: 'get', description: 'Get a lead', action: 'Get a lead' },
@@ -349,7 +349,7 @@ const leadProperties: INodeProperties[] = [
 		displayName: 'Limit',
 		name: 'limit',
 		type: 'number',
-		typeOptions: { minValue: 1, maxValue: 100 },
+		typeOptions: { minValue: 1, maxValue: 100, numberPrecision: 0 },
 		default: 50,
 		displayOptions: { show: { ...LEAD_GET_MANY, returnAll: [false] } },
 		description: 'Max number of results to return',

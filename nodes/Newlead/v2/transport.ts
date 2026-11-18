@@ -6,7 +6,7 @@ import type {
 	ILoadOptionsFunctions,
 	JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 import { apiErrorOf, describeApiError } from './helpers';
 
@@ -30,7 +30,7 @@ export async function v1Request(
 	const credentials = await this.getCredentials('newleadApi');
 	const request: IHttpRequestOptions = {
 		method,
-		url: `${credentials.baseUrl as string}/v1${path}`,
+		url: `${(credentials.baseUrl as string).replace(/\/+$/, '')}/v1${path}`,
 		json: true,
 		...(options.body && Object.keys(options.body).length > 0 ? { body: options.body } : {}),
 		...(options.query && Object.keys(options.query).length > 0 ? { qs: options.query } : {}),
@@ -60,7 +60,8 @@ export async function v1Request(
 /**
  * Every page of a paginated list (leads, messages, calls), following next_cursor. Not for
  * /text_agents or /templates: they are a single page and the API rejects `limit` there.
- * It always ends: a page without next_cursor, or one that repeats a cursor, stops the loop.
+ * It always ends, and never returns a partial list: a page that says has_more without a
+ * next_cursor, or one that repeats a cursor, throws.
  */
 export async function v1RequestAll(
 	this: RequestContext,
@@ -76,8 +77,17 @@ export async function v1RequestAll(
 		});
 		items.push(...((page.data as IDataObject[] | undefined) ?? []));
 		const next = typeof page.next_cursor === 'string' ? page.next_cursor : '';
-		cursor = page.has_more === true && next && !seen.has(next) ? next : undefined;
-		if (cursor) seen.add(cursor);
+		if (page.has_more !== true) {
+			cursor = undefined;
+		} else if (!next || seen.has(next)) {
+			throw new NodeOperationError(
+				this.getNode(),
+				`Pagination was interrupted on /v1${path}: the API reported more results but ${next ? 'repeated a cursor' : 'sent no next_cursor'}. Try again later; if it persists, contact support.`,
+			);
+		} else {
+			cursor = next;
+			seen.add(next);
+		}
 	} while (cursor);
 	return items;
 }
