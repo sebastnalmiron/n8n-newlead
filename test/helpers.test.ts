@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	apiErrorOf,
+	assertLeadId,
 	buildLeadVariables,
 	buildPauseBody,
 	buildTemplateComponents,
 	describeApiError,
 	idempotencyKeyFor,
+	pickIdempotencyKey,
 	simplifyProperties,
 	splitTemplateValue,
 	toE164,
@@ -154,7 +156,47 @@ describe('buildLeadVariables', () => {
 	});
 });
 
+describe('assertLeadId', () => {
+	it('returns a valid UUID, trimmed', () => {
+		expect(assertLeadId(' 22222222-2222-4222-8222-222222222222 ')).toBe(
+			'22222222-2222-4222-8222-222222222222',
+		);
+	});
+
+	it.each([[''], ['   '], [undefined], [null], ['abc'], ['123'], [42]])(
+		'rejects %j before any request is made',
+		(value) => {
+			expect(() => assertLeadId(value)).toThrow(/lead ID/);
+		},
+	);
+});
+
+describe('pickIdempotencyKey', () => {
+	it('uses the own key, trimmed, instead of the generated one', () => {
+		expect(pickIdempotencyKey('  crm-42 ', 'n8n:1:2:0:0')).toBe('crm-42');
+	});
+
+	it.each([[undefined], [''], ['   ']])('falls back to the generated key for %j', (value) => {
+		expect(pickIdempotencyKey(value, 'n8n:1:2:0:0')).toBe('n8n:1:2:0:0');
+	});
+
+	it('rejects a key longer than 255 characters', () => {
+		expect(() => pickIdempotencyKey('k'.repeat(256), 'g')).toThrow(/255/);
+		expect(pickIdempotencyKey('k'.repeat(255), 'g')).toHaveLength(255);
+	});
+});
+
 describe('buildPauseBody', () => {
+	it.each([[-5], ['abc'], [Number.NaN], ['-1']])('rejects the duration %j', (durationMin) => {
+		expect(() => buildPauseBody({ durationMin })).toThrow(/duration/i);
+	});
+
+	it('keeps empty and 0 as an indefinite pause', () => {
+		expect(buildPauseBody({ durationMin: '' })).toEqual({});
+		expect(buildPauseBody({ durationMin: undefined })).toEqual({});
+		expect(buildPauseBody({ durationMin: '0' })).toEqual({});
+	});
+
 	it('only sends what has a value', () => {
 		expect(buildPauseBody({})).toEqual({});
 		expect(buildPauseBody({ durationMin: 0, reason: '' })).toEqual({});

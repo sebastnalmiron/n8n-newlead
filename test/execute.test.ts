@@ -1,4 +1,4 @@
-import { NodeOperationError, type IDataObject, type INode } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError, type IDataObject, type INode } from 'n8n-workflow';
 import { describe, expect, it, vi } from 'vitest';
 
 import { Newlead } from '../nodes/Newlead/Newlead.node';
@@ -19,8 +19,12 @@ function setup(
 	const request = vi.fn(async () => responses[Math.min(call++, responses.length - 1)]);
 	const context = {
 		getInputData: () => Array.from({ length: options.items ?? 1 }, () => ({ json: {} })),
-		getNodeParameter: (name: string, _index: number, fallback?: unknown) =>
-			name in params ? params[name] : fallback,
+		// Like n8n: a parameter that does not exist and has no default throws
+		getNodeParameter: (name: string, _index: number, fallback?: unknown) => {
+			if (name in params) return params[name];
+			if (fallback !== undefined) return fallback;
+			throw new Error(`Could not get parameter ${name}`);
+		},
 		getNode: () => node,
 		getExecutionId: () => 'exec-9',
 		getWorkflowDataProxy: () => ({ $runIndex: options.runIndex ?? 0 }),
@@ -30,7 +34,8 @@ function setup(
 			httpRequestWithAuthentication: request,
 			returnJsonArray: (data: IDataObject | IDataObject[]) =>
 				(Array.isArray(data) ? data : [data]).map((json) => ({ json })),
-			constructExecutionMetaData: (data: unknown[]) => data,
+			constructExecutionMetaData: (data: object[], meta: { itemData: unknown }) =>
+				data.map((item) => ({ ...item, pairedItem: meta.itemData })),
 		},
 	} as never;
 	const run = () => new NewleadV2({} as never).execute.call(context);
@@ -88,6 +93,18 @@ describe('Template > Send', () => {
 		expect((sent(request).body as IDataObject).source_lead_id).toBe(LEAD);
 	});
 
+	it('uses the own idempotency key when given', async () => {
+		const { run, request } = setup({ ...params, templateOptions: { idempotencyKey: ' crm-9 ' } });
+		await run();
+		expect(sent(request).headers).toEqual({ 'Idempotency-Key': 'crm-9' });
+	});
+
+	it('rejects an own key over 255 characters, sending nothing', async () => {
+		const { run, request } = setup({ ...params, templateOptions: { idempotencyKey: 'k'.repeat(256) } });
+		await expect(run()).rejects.toBeInstanceOf(NodeOperationError);
+		expect(request).not.toHaveBeenCalled();
+	});
+
 	it('fails with a NodeOperationError on a bad phone, sending nothing', async () => {
 		const { run, request } = setup({ ...params, phoneNumber: '600111222' });
 		await expect(run()).rejects.toBeInstanceOf(NodeOperationError);
@@ -105,12 +122,58 @@ describe('Message > Send', () => {
 	const base = { resource: 'message', operation: 'send', textAgentId: AGENT, message: 'Hola' };
 
 	it('sends text to a lead by id, with the key and no text_agent_id', async () => {
-		const { run, request } = setup({ ...base, leadId: { mode: 'id', value: LEAD } });
+		const { run, request } = setup({ ...base, leadId: { mode: 'id', value: LEAD } }, [
+			{ id: LEAD, text_agent_id: AGENT },
+			{ id: 'msg' },
+		]);
 		await run();
-		expect(request).toHaveBeenCalledTimes(1);
-		const options = sent(request);
+		expect(request).toHaveBeenCalledTimes(2);
+		expect(sent(request, 0).method).toBe('GET');
+		expect(sent(request, 0).url).toBe(`https://api.newlead.ai/v1/leads/${LEAD}`);
+		expect(sent(request, 0).headers).toBeUndefined();
+		const options = sent(request, 1);
 		expect(options.body).toEqual({ type: 'text', lead_id: LEAD, text: 'Hola' });
 		expect(options.headers).toEqual({ 'Idempotency-Key': 'n8n:exec-9:node-1:0:0' });
+	});
+
+	it('does not send when the lead belongs to another agent', async () => {
+		const { run, request } = setup({ ...base, leadId: { mode: 'id', value: LEAD } }, [
+			{ id: LEAD, text_agent_id: '33333333-3333-4333-8333-333333333333' },
+		]);
+		await expect(run()).rejects.toThrow(/does not belong to the selected text agent/);
+		expect(request).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not send to a lead without a text agent', async () => {
+		const { run, request } = setup({ ...base, leadId: { mode: 'list', value: LEAD } }, [
+			{ id: LEAD, text_agent_id: null },
+		]);
+		await expect(run()).rejects.toThrow(/does not belong to the selected text agent/);
+		expect(request).toHaveBeenCalledTimes(1);
+	});
+
+	it('rejects an empty or invalid lead id before any request', async () => {
+		for (const value of ['', 'abc']) {
+			const { run, request } = setup({ ...base, leadId: { mode: 'id', value } });
+			await expect(run()).rejects.toBeInstanceOf(NodeOperationError);
+			expect(request).not.toHaveBeenCalled();
+		}
+	});
+
+	it('uses the own idempotency key when given, and the generated one when empty', async () => {
+		const byPhone = { mode: 'phone', value: '+34600111222' };
+		const own = setup(
+			{ ...base, leadId: byPhone, messageOptions: { idempotencyKey: ' crm-7 ' } },
+			[{ data: [{ id: LEAD }] }, { id: 'msg' }],
+		);
+		await own.run();
+		expect(sent(own.request, 1).headers).toEqual({ 'Idempotency-Key': 'crm-7' });
+		const empty = setup(
+			{ ...base, leadId: byPhone, messageOptions: { idempotencyKey: '' } },
+			[{ data: [{ id: LEAD }] }, { id: 'msg' }],
+		);
+		await empty.run();
+		expect(sent(empty.request, 1).headers).toEqual({ 'Idempotency-Key': 'n8n:exec-9:node-1:0:0' });
 	});
 
 	it('looks the lead up by phone inside the agent, without a key on the GET', async () => {
@@ -225,25 +288,157 @@ describe('AI Control', () => {
 	});
 });
 
-describe('errors', () => {
-	it('continueOnFail returns the message instead of throwing', async () => {
-		const { run } = setup(
+describe('AI Control: resume, status and invalid ids', () => {
+	const ai = { resource: 'aiControl', textAgentId: AGENT, leadId: { mode: 'id', value: LEAD } };
+
+	it('resume is a POST without key and without body', async () => {
+		const { run, request } = setup({ ...ai, operation: 'resume' });
+		await run();
+		const options = sent(request);
+		expect(options.url).toBe(`https://api.newlead.ai/v1/leads/${LEAD}/resume_ai`);
+		expect(options.body).toBeUndefined();
+		expect(options.headers).toBeUndefined();
+	});
+
+	it('status returns the three fields of the lead', async () => {
+		const { run } = setup({ ...ai, operation: 'getStatus' }, [
+			{ id: LEAD, ai_paused: true, ai_paused_until: '2026-12-01T10:00:00Z', name: 'x' },
+		]);
+		const [result] = await run();
+		expect(result[0].json).toEqual({
+			lead_id: LEAD,
+			ai_paused: true,
+			ai_paused_until: '2026-12-01T10:00:00Z',
+		});
+	});
+
+	it('status with an empty lead id fails instead of reading undefined', async () => {
+		const { run, request } = setup({
+			...ai,
+			operation: 'getStatus',
+			leadId: { mode: 'id', value: '' },
+		});
+		await expect(run()).rejects.toBeInstanceOf(NodeOperationError);
+		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('pause with a negative duration fails before calling the API', async () => {
+		const { run, request } = setup({ ...ai, operation: 'pause', pauseOptions: { durationMin: -5 } });
+		await expect(run()).rejects.toBeInstanceOf(NodeOperationError);
+		expect(request).not.toHaveBeenCalled();
+	});
+});
+
+describe('Lead > Get Many and Property', () => {
+	it('getMany lists with the agent, the filters and the limit', async () => {
+		const { run, request } = setup(
 			{
-				resource: 'message',
-				operation: 'send',
+				resource: 'lead',
+				operation: 'getMany',
 				textAgentId: AGENT,
-				message: 'x',
-				leadId: { mode: 'phone', value: 'abc' },
+				returnAll: false,
+				limit: 10,
+				filters: { status: 'closed' },
 			},
-			[{}],
-			{ continueOnFail: true },
+			[{ data: [{ id: 'a' }, { id: 'b' }] }],
 		);
 		const [result] = await run();
-		expect(result[0].json.error).toContain('phone number');
+		expect(sent(request).qs).toEqual({ text_agent_id: AGENT, status: 'closed', limit: '10' });
+		expect(result.map((item) => item.json.id)).toEqual(['a', 'b']);
+	});
+
+	it('getMany with return all follows the cursor', async () => {
+		const { run, request } = setup(
+			{ resource: 'lead', operation: 'getMany', textAgentId: AGENT, returnAll: true },
+			[
+				{ data: [{ id: 'a' }], has_more: true, next_cursor: 'c1' },
+				{ data: [{ id: 'b' }], has_more: false, next_cursor: null },
+			],
+		);
+		const [result] = await run();
+		expect(request).toHaveBeenCalledTimes(2);
+		expect((sent(request, 1).qs as IDataObject).cursor).toBe('c1');
+		expect(result).toHaveLength(2);
+	});
+
+	it('property accepts a numeric reference and simplifies', async () => {
+		const { run, request } = setup(
+			{ resource: 'property', operation: 'getByReference', reference: 109876543 },
+			[{ data: [] }],
+		);
+		const [result] = await run();
+		expect(sent(request).qs).toEqual({ reference: '109876543' });
+		expect(result[0].json).toMatchObject({ found: false, status: 'none' });
+	});
+});
+
+describe('continueOnFail', () => {
+	const getLead = {
+		resource: 'lead',
+		operation: 'get',
+		textAgentId: AGENT,
+		leadId: { mode: 'id', value: LEAD },
+	};
+
+	function failingRun(error: Error) {
+		const { run, request } = setup(getLead, [{}], { continueOnFail: true });
+		request.mockRejectedValue(error);
+		return run;
+	}
+
+	function apiError(code: string, extra: IDataObject = {}) {
+		return new NodeApiError(node, {
+			message: 'Bad Gateway',
+			httpCode: '502',
+			response: {
+				data: { error: { code, message: 'texto', param: null, request_id: 'req_1', ...extra } },
+			},
+		});
+	}
+
+	it('keeps code and request id of an API error on the error item', async () => {
+		const [items] = await failingRun(apiError('lead_not_found'))();
+		expect(items[0].json.error).toBe('lead_not_found: texto');
+		expect(items[0].json.details).toMatchObject({
+			code: 'lead_not_found',
+			request_id: 'req_1',
+			outcome_unknown: false,
+		});
+		expect(items[0].error).toBeInstanceOf(NodeApiError);
+		expect(items[0].pairedItem).toEqual({ item: 0 });
+	});
+
+	it('flags a send with an unknown outcome', async () => {
+		const [items] = await failingRun(
+			apiError('send_outcome_unknown', { details: { call_id: 'c1' } }),
+		)();
+		const details = items[0].json.details as IDataObject;
+		expect(details.outcome_unknown).toBe(true);
+		expect(details.code).toBe('send_outcome_unknown');
+		expect(String(details.description)).toContain('do not repeat it with a different idempotency key');
+	});
+
+	it('gives null code and request id for a validation error', async () => {
+		const { run } = setup({ ...getLead, leadId: { mode: 'id', value: 'abc' } }, [{}], {
+			continueOnFail: true,
+		});
+		const [items] = await run();
+		expect(items[0].json.error).toContain('lead ID');
+		expect(items[0].json.details).toMatchObject({
+			code: null,
+			request_id: null,
+			outcome_unknown: false,
+		});
+		expect(items[0].error).toBeInstanceOf(NodeOperationError);
+		expect(items[0].pairedItem).toEqual({ item: 0 });
 	});
 });
 
 describe('versioning', () => {
+	it('is not offered as an AI tool: a retry as a tool changes the run index, and with it the key', () => {
+		expect(new NewleadV2({} as never).description.usableAsTool).toBeUndefined();
+	});
+
 	it('keeps v1 for saved flows and makes v2 the default', () => {
 		const versioned = new Newlead();
 		expect(versioned.currentVersion).toBe(2);

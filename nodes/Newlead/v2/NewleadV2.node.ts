@@ -13,10 +13,13 @@ import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workf
 
 import { nodeProperties } from './descriptions';
 import {
+	assertLeadId,
 	buildLeadVariables,
 	buildPauseBody,
 	buildTemplateComponents,
+	errorDetails,
 	idempotencyKeyFor,
+	pickIdempotencyKey,
 	simplifyProperties,
 	splitTemplateValue,
 	toE164,
@@ -32,12 +35,20 @@ function leadLabel(lead: IDataObject): string {
 	return (lead.name as string) || contact || (lead.id as string);
 }
 
-function idempotencyKey(context: IExecuteFunctions, itemIndex: number): string {
-	return idempotencyKeyFor(
-		context.getExecutionId(),
-		context.getNode().id,
-		context.getWorkflowDataProxy(itemIndex).$runIndex as number,
-		itemIndex,
+/** The key the user gave in the options, or one built from the execution, node, run and item. */
+function idempotencyKey(
+	context: IExecuteFunctions,
+	itemIndex: number,
+	options: IDataObject = {},
+): string {
+	return pickIdempotencyKey(
+		options.idempotencyKey,
+		idempotencyKeyFor(
+			context.getExecutionId(),
+			context.getNode().id,
+			context.getWorkflowDataProxy(itemIndex).$runIndex as number,
+			itemIndex,
+		),
 	);
 }
 
@@ -50,10 +61,10 @@ function variablesOf(context: IExecuteFunctions, itemIndex: number): IDataObject
 /** The lead's id; a phone number is looked up inside the agent. */
 async function resolveLeadId(context: IExecuteFunctions, itemIndex: number): Promise<string> {
 	const locator = context.getNodeParameter('leadId', itemIndex) as IDataObject;
-	const value = String(locator.value ?? '').trim();
 	if (locator.mode !== 'phone') {
-		return value;
+		return assertLeadId(locator.value);
 	}
+	const value = String(locator.value ?? '').trim();
 	const page = await v1Request.call(context, 'GET', '/leads', {
 		query: {
 			phone: toE164(value),
@@ -90,7 +101,7 @@ async function sendTemplate(context: IExecuteFunctions, itemIndex: number): Prom
 	const variables = variablesOf(context, itemIndex);
 	const sourceLeadId = String(options.sourceLeadId ?? '').trim();
 	return await v1Request.call(context, 'POST', '/messages', {
-		idempotencyKey: idempotencyKey(context, itemIndex),
+		idempotencyKey: idempotencyKey(context, itemIndex, options),
 		body: {
 			type: 'template',
 			text_agent_id: context.getNodeParameter('textAgentId', itemIndex) as string,
@@ -105,11 +116,28 @@ async function sendTemplate(context: IExecuteFunctions, itemIndex: number): Prom
 }
 
 async function sendMessage(context: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
+	// Validate the own key first: it costs nothing, the lead check below is a request
+	const options = context.getNodeParameter('messageOptions', itemIndex, {}) as IDataObject;
+	const key = idempotencyKey(context, itemIndex, options);
+	const leadId = await resolveLeadId(context, itemIndex);
+	const textAgentId = context.getNodeParameter('textAgentId', itemIndex) as string;
+	const locator = context.getNodeParameter('leadId', itemIndex) as IDataObject;
+	if (locator.mode !== 'phone') {
+		// The phone lookup already filters by agent; a list or an id may point at a lead of another one
+		const lead = await v1Request.call(context, 'GET', `/leads/${leadId}`);
+		if (lead.text_agent_id !== textAgentId) {
+			throw new NodeOperationError(
+				context.getNode(),
+				'The lead does not belong to the selected text agent',
+				{ itemIndex, description: 'Choose another lead, or the agent that owns this one.' },
+			);
+		}
+	}
 	return await v1Request.call(context, 'POST', '/messages', {
-		idempotencyKey: idempotencyKey(context, itemIndex),
+		idempotencyKey: key,
 		body: {
 			type: 'text',
-			lead_id: await resolveLeadId(context, itemIndex),
+			lead_id: leadId,
 			text: context.getNodeParameter('message', itemIndex) as string,
 		},
 	});
@@ -189,7 +217,7 @@ async function runAiControl(
 }
 
 async function runProperty(context: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
-	const reference = (context.getNodeParameter('reference', itemIndex) as string).trim();
+	const reference = String(context.getNodeParameter('reference', itemIndex)).trim();
 	const page = await v1Request.call(context, 'GET', '/properties', { query: { reference } });
 	return context.getNodeParameter('simplify', itemIndex, true)
 		? simplifyProperties(page.data as IDataObject[])
@@ -230,7 +258,7 @@ export class NewleadV2 implements INodeType {
 			defaults: { name: 'Newlead' },
 			inputs: [NodeConnectionTypes.Main],
 			outputs: [NodeConnectionTypes.Main],
-			usableAsTool: true,
+			// No usableAsTool: as a tool n8n raises the run index on every attempt, so a retry would get a new idempotency key and could send the WhatsApp twice
 			credentials: [{ name: 'newleadApi', required: true }],
 			properties: nodeProperties,
 		};
@@ -291,16 +319,17 @@ export class NewleadV2 implements INodeType {
 					}),
 				);
 			} catch (error) {
-				if (this.continueOnFail()) {
-					returnData.push({
-						json: { error: (error as Error).message },
-						pairedItem: { item: itemIndex },
-					});
-					continue;
-				}
-				throw error instanceof NodeApiError || error instanceof NodeOperationError
-					? error
-					: new NodeOperationError(this.getNode(), error as Error, { itemIndex });
+				const failure =
+					error instanceof NodeApiError || error instanceof NodeOperationError
+						? error
+						: new NodeOperationError(this.getNode(), error as Error, { itemIndex });
+				if (!this.continueOnFail()) throw failure;
+				// n8n routes an item with `error` to the error output; `details` keeps what an uncertain send needs
+				returnData.push({
+					json: { error: failure.message, details: errorDetails(failure) },
+					error: failure,
+					pairedItem: { item: itemIndex },
+				});
 			}
 		}
 

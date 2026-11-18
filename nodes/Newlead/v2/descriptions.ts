@@ -104,6 +104,15 @@ const LEAD_CREATE = { resource: ['lead'], operation: ['create'] };
 const LEAD_UPDATE = { resource: ['lead'], operation: ['update'] };
 const LEAD_GET_MANY = { resource: ['lead'], operation: ['getMany'] };
 
+const IDEMPOTENCY_KEY_OPTION: INodeProperties = {
+	displayName: 'Idempotency Key',
+	name: 'idempotencyKey',
+	type: 'string',
+	default: '',
+	description:
+		'A stable key of your own, such as the record ID in your CRM. With it, running the workflow again does not send again. Up to 255 characters.',
+};
+
 const templateProperties: INodeProperties[] = [
 	operationField(
 		'template',
@@ -234,6 +243,7 @@ const templateProperties: INodeProperties[] = [
 				default: false,
 				description: 'Whether the agent starts this conversation from scratch',
 			},
+			IDEMPOTENCY_KEY_OPTION,
 			{
 				displayName: 'Pause AI',
 				name: 'pauseAi',
@@ -276,6 +286,17 @@ const messageProperties: INodeProperties[] = [
 		default: '',
 		displayOptions: { show: MESSAGE_SEND },
 		description: 'Message text to send (max 4096 characters)',
+	},
+	{
+		displayName: 'Options',
+		name: 'messageOptions',
+		type: 'collection',
+		placeholder: 'Add Option',
+		default: {},
+		displayOptions: { show: MESSAGE_SEND },
+		options: [
+			IDEMPOTENCY_KEY_OPTION,
+		],
 	},
 ];
 

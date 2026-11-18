@@ -125,14 +125,49 @@ export function buildLeadVariables(rows: IDataObject[]): IDataObject | undefined
 	return Object.keys(variables).length > 0 ? variables : undefined;
 }
 
-/** The optional body of pause_ai. Without a duration the pause lasts until resume_ai. */
+/**
+ * The optional body of pause_ai. Without a duration (empty or 0) the pause lasts until resume_ai.
+ * A negative or non-numeric duration throws: turning it into an indefinite pause would silence
+ * the lead without anybody asking for it.
+ */
 export function buildPauseBody(options: IDataObject): IDataObject {
-	const minutes = Math.floor(Number(options.durationMin));
+	const raw = String(options.durationMin ?? '').trim();
+	const duration = raw === '' ? 0 : Number(raw);
+	if (!Number.isFinite(duration) || duration < 0) {
+		throw new Error(`The pause duration "${raw}" must be a number of minutes, 0 or more`);
+	}
+	const minutes = Math.floor(duration);
 	const reason = String(options.reason ?? '').trim();
 	return {
-		...(Number.isFinite(minutes) && minutes > 0 ? { duration_min: minutes } : {}),
+		...(minutes > 0 ? { duration_min: minutes } : {}),
 		...(reason ? { reason } : {}),
 	};
+}
+
+const LEAD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A lead id outside the phone mode. An empty one would turn GET /v1/leads/{id} into the lead list. */
+export function assertLeadId(value: unknown): string {
+	const raw = typeof value === 'string' ? value : '';
+	const id = raw.trim();
+	if (!LEAD_ID_PATTERN.test(id)) {
+		throw new Error(
+			`The lead ID "${raw}" is not valid: it must be a UUID such as c848c5a4-c052-4a3b-80bc-54b02475b06e`,
+		);
+	}
+	return id;
+}
+
+const IDEMPOTENCY_KEY_MAX = 255;
+
+/** The key the user chose (their CRM record id, say) wins over the generated one. */
+export function pickIdempotencyKey(own: unknown, generated: string): string {
+	const key = typeof own === 'string' ? own.trim() : '';
+	if (!key) return generated;
+	if (key.length > IDEMPOTENCY_KEY_MAX) {
+		throw new Error(`The idempotency key can have up to ${IDEMPOTENCY_KEY_MAX} characters`);
+	}
+	return key;
 }
 
 /**
@@ -212,6 +247,17 @@ export function describeApiError(detail: ApiErrorInfo): { message: string; descr
 	return {
 		message: `${detail.code}: ${detail.message}`,
 		description: [param, requestId].filter(Boolean).join(' '),
+	};
+}
+
+/** What an error item carries for a Continue On Fail flow, so it can tell an uncertain send from a failed one. */
+export function errorDetails(error: { description?: string | null }): IDataObject {
+	const detail = apiErrorOf(error);
+	return {
+		code: detail?.code ?? null,
+		request_id: detail?.requestId ?? null,
+		outcome_unknown: detail?.code === 'send_outcome_unknown',
+		description: error.description ?? null,
 	};
 }
 
