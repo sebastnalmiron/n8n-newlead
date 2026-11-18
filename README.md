@@ -8,7 +8,7 @@ Newlead is a WhatsApp CRM platform for managing leads, sending templates, and co
 
 ## 2.0.0
 
-The node now has two versions. Existing workflows keep version 1 and nothing changes for them. New nodes use version 2, which talks to the public API (`/v1`) and sends an `Idempotency-Key` on every send. Version 2 needs a subaccount API key, cannot be used as an AI agent tool, and requires phone numbers with the country code. Migration guide: https://docs.newlead.ai/migrar-rutas-antiguas
+The node now has two versions. Existing workflows keep version 1 and nothing changes for them today, but version 1 will stop working when the old routes stop accepting API keys (announced in advance, no date yet). New nodes use version 2, which talks to the public API (`/v1`) and sends an `Idempotency-Key` on every send. Version 2 needs a subaccount API key, cannot be used as an AI agent tool, and requires phone numbers with the country code. Migration guide: https://docs.newlead.ai/migrar-rutas-antiguas
 
 [Installation](#installation)
 [Operations](#operations)
@@ -24,19 +24,24 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 
 ## Operations
 
-- **Template → Send**: send an approved WhatsApp template. Options:
-  - **Dynamic Variables**: values saved on the lead before the conversation starts. A qualification question set to fill from a lead variable with the same name uses it instead of asking (if the value fits the question type).
-  - **Manual Mode**: keep the AI paused so a person handles the conversation.
-  - **Clear Previous Chat**: start the lead from scratch (previous messages hidden; summary, qualification, variables and follow-ups reset). The lead keeps its ID, name and phone. Unless Manual Mode is on, the AI is switched back on.
-  - **Source Lead ID**: ID of the lead this contact comes from (e.g. the web chat they called from). The lead that receives the template is joined to that person.
+Version 2 of the node (new nodes). Pick the **Text Agent** first; every send carries an `Idempotency-Key`.
 
-  After sending, check `data.warnings`, `data.ai_mode` and `data.conversation_reset` in the output to confirm what actually happened for this lead; warnings do not fail the node — the template was already sent.
-- **Message → Send**: send a manual text message (WhatsApp & Instagram). Accepts a Lead ID, a phone number, or the WhatsApp ID of a lead that already exists in the bot.
-- **Lead → Create**: create a lead, or update it if the phone already exists in the bot.
-- **Lead → Get / Update**: accept a Lead ID, phone number, or WhatsApp ID to locate the lead; update name, status and dynamic variables (only the listed variables change).
-- **Lead → Get Many**: read all leads from a bot.
-- **AI Control → Pause / Resume / Get Status**: control the AI for a lead. Unlike Lead → Get/Update, this only takes a Lead ID (from the list or typed manually) — phone number and WhatsApp ID are not offered here.
-- **Property → Get by Reference**: find a property of the subaccount (imported from Idealista) by its Idealista listing code — full or its last 3+ digits — or the agency internal reference. With **Simplify** on (default), the output is flat and ready for template variables: `found` (exactly one match), `status` (`unique`, `few`, `many` or `none`), `operation` (`sale` or `rent`: the one whose listing code matched the reference), `reference`, `price` and `url` of that listing, `reference_sale`/`reference_rent`, `price_sale`/`price_rent`, `url_sale`/`url_rent`, `summary`, `address`, `city` (the municipality), `province` (from the postal code: Fuengirola → `Málaga`), `sales_agent_name`, `sales_agent_phone`, `visit_hours`, `candidates_count`… Internal agent notes are never included. Needs an API key created inside a subaccount with an Idealista account connected.
+- **Template → Send**: send an approved WhatsApp template to a phone number with country code (the lead is created if it does not exist). Fields: **Header Type / Value / Filename**, **Body Variables** (`{{1}}`, `{{2}}`… in order) and **URL Buttons**. Options:
+  - **Clear Previous Chat**: the agent starts this conversation from scratch.
+  - **Pause AI**: the AI stops answering this lead after the template, so a person handles it.
+  - **Source Lead ID**: the lead of the same person in another channel, such as the call that led here.
+  - **Idempotency Key**: a stable key of your own, different for every send (see below).
+  - **Lead Variables**: values saved on the lead; only the listed ones are added or changed.
+- **Message → Send**: send a text message to a lead chosen from the list, by ID or by phone number. The lead must already exist and belong to the chosen agent. Option: **Idempotency Key**.
+- **Lead → Create**: create a lead, or update it if the agent already has one with that phone. **Lead → Get / Update**: by list, ID or phone; update name, status and variables. **Lead → Get Many**: **Return All** or a **Limit**, filtered by **Status**.
+- **AI Control → Pause / Resume / Get Status**: control the AI for a lead (**Pause Options**: duration in minutes and reason).
+- **Property → Get by Reference**: find a property by Idealista listing code (full or its last 3+ digits) or internal reference. With **Simplify** on (default) the output is flat and ready for template variables (`found`, `status`, `reference`, `price`, `url`, `city`, `province`, `candidates_count`…). Needs a subaccount with an Idealista account connected.
+
+Phone numbers need the country code: `612345678` is an error, `+34612345678` is valid. Version 2 needs a subaccount API key and cannot be used as an AI agent tool. Not in version 2: lookup by WhatsApp ID, the `currency` and `date_time` template variables and `quick_reply` buttons.
+
+Retries: **Retry On Fail** normally does not send twice. Re-running a finished execution does, unless you set **Idempotency Key** (remembered 24 hours). With **On Error › Continue**, an error item carries `error` and `details` (`code`, `request_id`, `outcome_unknown`, `description`); if `outcome_unknown` is `true` the message may have gone out, so check before repeating.
+
+Version 1 (workflows saved before 2.0.0) keeps working for now, but it calls the old routes, which will stop accepting API keys; we will announce it in advance, with no date yet. Move workflows to version 2: https://docs.newlead.ai/migrar-rutas-antiguas
 
 ## Credentials
 

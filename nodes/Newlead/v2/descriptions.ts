@@ -110,7 +110,7 @@ const IDEMPOTENCY_KEY_OPTION: INodeProperties = {
 	type: 'string',
 	default: '',
 	description:
-		'A stable key of your own, such as the record ID in your CRM. With it, running the workflow again does not send again. Up to 255 characters.',
+		'A stable key of your own, different for every send (for example the record ID in your CRM plus the reason for the message). Running the workflow again with the same key does not send again, for 24 hours; the same key with another message is rejected. Up to 255 characters.',
 };
 
 const templateProperties: INodeProperties[] = [
