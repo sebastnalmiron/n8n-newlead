@@ -82,7 +82,7 @@ export const leadFields: INodeProperties[] = [
 				displayName: 'By ID',
 				name: 'id',
 				type: 'string',
-				placeholder: 'c848c5a4-c052-4a3b-80bc-54b02475b06e',
+				placeholder: '00000000-0000-4000-8000-000000000001',
 				validation: [
 					{
 						type: 'regex',

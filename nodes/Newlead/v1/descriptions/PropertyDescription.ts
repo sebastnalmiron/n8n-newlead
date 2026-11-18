@@ -31,7 +31,7 @@ export const propertyFields: INodeProperties[] = [
 		type: 'string',
 		required: true,
 		default: '',
-		placeholder: '109876543, 6543 or SNAP-0412',
+		placeholder: '109876543, 6543 or REF-0001',
 		displayOptions: {
 			show: {
 				resource: ['property'],

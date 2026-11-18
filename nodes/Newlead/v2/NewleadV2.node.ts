@@ -8,6 +8,7 @@ import type {
 	INodeType,
 	INodeTypeBaseDescription,
 	INodeTypeDescription,
+	JsonObject,
 } from 'n8n-workflow';
 import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
@@ -18,6 +19,7 @@ import {
 	buildPauseBody,
 	buildTemplateComponents,
 	errorDetails,
+	isTooManyMatches,
 	idempotencyKeyFor,
 	pickIdempotencyKey,
 	simplifyProperties,
@@ -28,6 +30,8 @@ import {
 import { v1Request, v1RequestAll } from './transport';
 
 const LEAD_PICKER_LIMIT = '100';
+/** The channels the old routes looked at when searching by phone (WHATSAPP_LEAD_CHANNELS in the API). */
+const PHONE_LOOKUP_CHANNELS = ['whatsapp', 'meta_ads'];
 
 function leadLabel(lead: IDataObject): string {
 	const contact = (lead.phone as string) || (lead.username ? `@${lead.username as string}` : '');
@@ -69,10 +73,13 @@ async function resolveLeadId(context: IExecuteFunctions, itemIndex: number): Pro
 		query: {
 			phone: toE164(value),
 			text_agent_id: context.getNodeParameter('textAgentId', itemIndex) as string,
-			limit: '2',
+			limit: LEAD_PICKER_LIMIT,
 		},
 	});
-	const leads = page.data as IDataObject[];
+	// The API also returns the web chat twins of a phone; a message would end up in the widget
+	const leads = (page.data as IDataObject[]).filter((lead) =>
+		PHONE_LOOKUP_CHANNELS.includes(lead.channel as string),
+	);
 	if (leads.length === 0) {
 		throw new NodeOperationError(context.getNode(), `No lead with phone ${value} in this agent`, {
 			itemIndex,
@@ -218,10 +225,16 @@ async function runAiControl(
 
 async function runProperty(context: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
 	const reference = String(context.getNodeParameter('reference', itemIndex)).trim();
-	const page = await v1Request.call(context, 'GET', '/properties', { query: { reference } });
-	return context.getNodeParameter('simplify', itemIndex, true)
-		? simplifyProperties(page.data as IDataObject[])
-		: page;
+	const simplify = context.getNodeParameter('simplify', itemIndex, true);
+	let page: IDataObject;
+	try {
+		page = await v1Request.call(context, 'GET', '/properties', { query: { reference } });
+	} catch (error) {
+		// Like version 1, more than 3 matches is a result. A malformed reference has the same code and param
+		if (simplify && isTooManyMatches(error)) return simplifyProperties([], 'many');
+		throw error instanceof NodeApiError ? error : new NodeApiError(context.getNode(), error as JsonObject);
+	}
+	return simplify ? simplifyProperties(page.data as IDataObject[]) : page;
 }
 
 async function runItem(

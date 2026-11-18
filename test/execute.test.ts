@@ -164,13 +164,13 @@ describe('Message > Send', () => {
 		const byPhone = { mode: 'phone', value: '+34600111222' };
 		const own = setup(
 			{ ...base, leadId: byPhone, messageOptions: { idempotencyKey: ' crm-7 ' } },
-			[{ data: [{ id: LEAD }] }, { id: 'msg' }],
+			[{ data: [{ id: LEAD, channel: 'whatsapp' }] }, { id: 'msg' }],
 		);
 		await own.run();
 		expect(sent(own.request, 1).headers).toEqual({ 'Idempotency-Key': 'crm-7' });
 		const empty = setup(
 			{ ...base, leadId: byPhone, messageOptions: { idempotencyKey: '' } },
-			[{ data: [{ id: LEAD }] }, { id: 'msg' }],
+			[{ data: [{ id: LEAD, channel: 'whatsapp' }] }, { id: 'msg' }],
 		);
 		await empty.run();
 		expect(sent(empty.request, 1).headers).toEqual({ 'Idempotency-Key': 'n8n:exec-9:node-1:0:0' });
@@ -178,13 +178,13 @@ describe('Message > Send', () => {
 
 	it('looks the lead up by phone inside the agent, without a key on the GET', async () => {
 		const { run, request } = setup({ ...base, leadId: { mode: 'phone', value: '+34 600 111 222' } }, [
-			{ data: [{ id: LEAD }] },
+			{ data: [{ id: LEAD, channel: 'whatsapp' }] },
 			{ id: 'msg' },
 		]);
 		await run();
 		const lookup = sent(request, 0);
 		expect(lookup.method).toBe('GET');
-		expect(lookup.qs).toEqual({ phone: '+34600111222', text_agent_id: AGENT, limit: '2' });
+		expect(lookup.qs).toEqual({ phone: '+34600111222', text_agent_id: AGENT, limit: '100' });
 		expect(lookup.headers).toBeUndefined();
 		expect((sent(request, 1).body as IDataObject).lead_id).toBe(LEAD);
 	});
@@ -199,9 +199,34 @@ describe('Message > Send', () => {
 
 	it('fails without sending when several leads share the phone', async () => {
 		const { run, request } = setup({ ...base, leadId: { mode: 'phone', value: '+34600111222' } }, [
-			{ data: [{ id: LEAD }, { id: 'other' }] },
+			{ data: [{ id: LEAD, channel: 'whatsapp' }, { id: 'other', channel: 'meta_ads' }] },
 		]);
 		await expect(run()).rejects.toThrow('More than one lead');
+		expect(request).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('Message > Send: lead by phone and channel', () => {
+	const send = {
+		resource: 'message',
+		operation: 'send',
+		textAgentId: AGENT,
+		message: 'Hola',
+		leadId: { mode: 'phone', value: '+34600111222' },
+	};
+
+	it('picks the WhatsApp lead when a web chat twin has the same phone', async () => {
+		const { run, request } = setup(send, [
+			{ data: [{ id: 'web', channel: 'webchat' }, { id: LEAD, channel: 'whatsapp' }] },
+			{ id: 'msg' },
+		]);
+		await run();
+		expect((sent(request, 1).body as IDataObject).lead_id).toBe(LEAD);
+	});
+
+	it('fails without sending when only the web chat lead has the phone', async () => {
+		const { run, request } = setup(send, [{ data: [{ id: 'web', channel: 'webchat' }] }]);
+		await expect(run()).rejects.toThrow('No lead with phone');
 		expect(request).toHaveBeenCalledTimes(1);
 	});
 });
@@ -372,6 +397,37 @@ describe('Lead > Get Many and Property', () => {
 	});
 });
 
+describe('Property > Get by Reference: more than 3 matches', () => {
+	const params = { resource: 'property', operation: 'getByReference', reference: '546' };
+	const invalid = (message: string) =>
+		new NodeApiError(node, {
+			message: 'Bad Request',
+			httpCode: '400',
+			response: { data: { error: { code: 'parameter_invalid', message, param: 'reference' } } },
+		});
+
+	it('is a result with Simplify on', async () => {
+		const { run, request } = setup(params, [{}]);
+		request.mockRejectedValue(
+			invalid('reference matches 12 properties. Send the full Idealista listing code or the internal reference.'),
+		);
+		const [result] = await run();
+		expect(result[0].json).toMatchObject({ found: false, status: 'many' });
+	});
+
+	it('stays an error for a malformed reference', async () => {
+		const { run, request } = setup(params, [{}]);
+		request.mockRejectedValue(invalid('reference does not match the pattern'));
+		await expect(run()).rejects.toThrow('parameter_invalid');
+	});
+
+	it('stays an error with Simplify off', async () => {
+		const { run, request } = setup({ ...params, simplify: false }, [{}]);
+		request.mockRejectedValue(invalid('reference matches 12 properties. Send more.'));
+		await expect(run()).rejects.toThrow('parameter_invalid');
+	});
+});
+
 describe('continueOnFail', () => {
 	const getLead = {
 		resource: 'lead',
@@ -435,6 +491,13 @@ describe('continueOnFail', () => {
 });
 
 describe('versioning', () => {
+	it('opens the AI tool variant of version 1 as version 1', () => {
+		const versioned = new Newlead();
+		const v1 = versioned.getNodeType(1).description;
+		expect(v1).toMatchObject({ version: 1, defaultVersion: 1 });
+		expect(versioned.description.defaultVersion).toBe(2);
+	});
+
 	it('is not offered as an AI tool: a retry as a tool changes the run index, and with it the key', () => {
 		expect(new NewleadV2({} as never).description.usableAsTool).toBeUndefined();
 	});

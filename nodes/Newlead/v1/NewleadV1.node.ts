@@ -36,6 +36,8 @@ export class NewleadV1 implements INodeType {
 		this.description = {
 			...baseDescription,
 			version: 1,
+			// The AI tool variant only exists in version 1 and cannot be opened as version 2
+			defaultVersion: 1,
 			subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
 			defaults: {
 				name: 'Newlead',

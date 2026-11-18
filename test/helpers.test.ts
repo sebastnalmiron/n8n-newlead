@@ -325,7 +325,7 @@ describe('describeApiError', () => {
 describe('simplifyProperties', () => {
 	const property = {
 		reference: '109876543',
-		internal_reference: 'SNAP-0412',
+		internal_reference: 'REF-0001',
 		type: 'flat',
 		type_label: 'Piso',
 		available: true,
@@ -369,9 +369,9 @@ describe('simplifyProperties', () => {
 			operation: 'rent',
 			reference: '109876543',
 			available: true,
-			price: 900,
-			price_sale: 200000,
-			price_rent: 900,
+			price: '900 € al mes',
+			price_sale: '200.000 €',
+			price_rent: '900 € al mes',
 			reference_sale: '111',
 			reference_rent: '222',
 			url_sale: 'https://i.co/111',
@@ -381,6 +381,18 @@ describe('simplifyProperties', () => {
 			candidates_count: 0,
 		});
 		expect(JSON.stringify(result)).not.toContain('Nota interna');
+	});
+
+	it('writes the price as text like version 1: sale and rent, null without listing', () => {
+		expect(simplifyProperties([{ ...property, matched_operation: 'sale' }])).toMatchObject({
+			price: '200.000 €',
+			price_sale: '200.000 €',
+			price_rent: '900 € al mes',
+		});
+		const rentOnly = { ...property, matched_operation: 'rent', listings: [property.listings[1]] };
+		expect(simplifyProperties([rentOnly])).toMatchObject({ price_sale: null, price_rent: '900 € al mes' });
+		expect(simplifyProperties([{ ...property, matched_operation: null }])).toMatchObject({ price: null });
+		expect(simplifyProperties([])).toMatchObject({ price: null, price_sale: null, price_rent: null });
 	});
 
 	it('is not available when the matched listing is gone', () => {
@@ -403,8 +415,8 @@ describe('simplifyProperties', () => {
 			],
 		};
 		expect(simplifyProperties([withdrawn])).toMatchObject({
-			price: 900,
-			price_rent: 900,
+			price: '900 € al mes',
+			price_rent: '900 € al mes',
 			reference_rent: '222',
 			url_rent: 'https://i.co/222',
 		});

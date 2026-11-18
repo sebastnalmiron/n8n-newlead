@@ -152,7 +152,7 @@ export function assertLeadId(value: unknown): string {
 	const id = raw.trim();
 	if (!LEAD_ID_PATTERN.test(id)) {
 		throw new Error(
-			`The lead ID "${raw}" is not valid: it must be a UUID such as c848c5a4-c052-4a3b-80bc-54b02475b06e`,
+			`The lead ID "${raw}" is not valid: it must be a UUID such as 00000000-0000-4000-8000-000000000001`,
 		);
 	}
 	return id;
@@ -266,12 +266,34 @@ function statusOf(count: number): 'none' | 'unique' | 'few' {
 	return count === 1 ? 'unique' : 'few';
 }
 
+/** GET /v1/properties answers parameter_invalid on `reference` for both a malformed one and more than 3 matches; only the message tells them apart. */
+export function isTooManyMatches(error: unknown): boolean {
+	const detail = apiErrorOf(error);
+	return (
+		detail?.code === 'parameter_invalid' &&
+		detail.param === 'reference' &&
+		/^reference matches \d+ properties/.test(detail.message)
+	);
+}
+
+/** 1800 → "1.800 € al mes" (rent), 333000 → "333.000 €" (sale): the text version 1 gave. */
+function formatPrice(price: unknown, operation: 'sale' | 'rent' | null): string | null {
+	if (typeof price !== 'number') return null;
+	const amount = Math.round(price)
+		.toString()
+		.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+	return operation === 'rent' ? `${amount} € al mes` : `${amount} €`;
+}
+
 /**
  * GET /v1/properties → flat fields for template variables, with the same names as node version 1.
  * `found` is true only with exactly one match. The agent notes are left out on purpose: they are
  * never sent to leads.
  */
-export function simplifyProperties(properties: IDataObject[]): IDataObject {
+export function simplifyProperties(
+	properties: IDataObject[],
+	forcedStatus?: 'many',
+): IDataObject {
 	const property = properties.length === 1 ? properties[0] : {};
 	const listings = (property.listings as IDataObject[] | undefined) ?? [];
 	// Same rule as the API (propertyMappers.ts): a withdrawn listing must not give an old price or URL
@@ -283,7 +305,7 @@ export function simplifyProperties(properties: IDataObject[]): IDataObject {
 	const salesAgent = property.sales_agent as IDataObject | null | undefined;
 	return {
 		found: properties.length === 1,
-		status: statusOf(properties.length),
+		status: forcedStatus ?? statusOf(properties.length),
 		operation: matched,
 		reference: property.reference ?? null,
 		internal_reference: property.internal_reference ?? null,
@@ -297,9 +319,9 @@ export function simplifyProperties(properties: IDataObject[]): IDataObject {
 		bedrooms: property.bedrooms ?? null,
 		bathrooms: property.bathrooms ?? null,
 		built_m2: property.built_m2 ?? null,
-		price: fieldOf(matched, 'price'),
-		price_sale: fieldOf('sale', 'price'),
-		price_rent: fieldOf('rent', 'price'),
+		price: formatPrice(fieldOf(matched, 'price'), matched as 'sale' | 'rent' | null),
+		price_sale: formatPrice(fieldOf('sale', 'price'), 'sale'),
+		price_rent: formatPrice(fieldOf('rent', 'price'), 'rent'),
 		reference_sale: fieldOf('sale', 'idealista_code'),
 		reference_rent: fieldOf('rent', 'idealista_code'),
 		features: property.features ?? null,
