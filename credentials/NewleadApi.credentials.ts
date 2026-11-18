@@ -8,7 +8,7 @@ import type {
 export class NewleadApi implements ICredentialType {
 	name = 'newleadApi';
 	displayName = 'Newlead API';
-	documentationUrl = 'https://docs.newlead.ai';
+	documentationUrl = 'https://docs.newlead.ai/n8n';
 	icon = { light: 'file:newlead.svg', dark: 'file:newlead.svg' } as const;
 
 	properties: INodeProperties[] = [
@@ -21,7 +21,7 @@ export class NewleadApi implements ICredentialType {
 			},
 			default: '',
 			required: true,
-			description: 'API Key from Newlead dashboard (Settings → API Keys)',
+			description: 'API key of the subaccount, created in Configuración › API',
 		},
 		{
 			displayName: 'Base URL',
@@ -44,7 +44,7 @@ export class NewleadApi implements ICredentialType {
 	test: ICredentialTestRequest = {
 		request: {
 			baseURL: '={{$credentials.baseUrl}}',
-			url: '/bots',
+			url: '/v1/text_agents',
 			method: 'GET',
 			headers: {
 				'x-api-key': '={{$credentials.apiKey}}',
