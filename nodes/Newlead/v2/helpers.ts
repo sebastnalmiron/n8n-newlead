@@ -4,7 +4,7 @@ export type TemplateHeaderType = 'none' | 'text' | 'image' | 'video' | 'document
 
 export interface TemplateComponentsInput {
 	headerType: TemplateHeaderType;
-	headerValue?: string;
+	headerValue?: unknown;
 	headerFilename?: string;
 	bodyVariables: IDataObject[];
 	urlButtons: IDataObject[];
@@ -15,11 +15,47 @@ export interface ApiErrorInfo {
 	message: string;
 	param: string | null;
 	requestId: string | null;
+	details: IDataObject | null;
 }
 
-/** The API only takes E.164: `34 600-111-222` becomes `+34600111222`. */
-export function toE164(phone: string): string {
-	return `+${phone.replace(/\D/g, '')}`;
+/**
+ * The API only takes E.164: `34 600-111-222` becomes `+34600111222`. A number without `+` or `00`
+ * must already carry its country code (11+ digits, WhatsApp style): guessing one would send the
+ * message to somebody else.
+ */
+export function toE164(phone: unknown): string {
+	const raw = String(phone ?? '').trim();
+	if (!raw) {
+		throw new Error('The phone number is empty');
+	}
+	if (!/^\+?[\d\s\-()]+$/.test(raw) || /\(\s*0\s*\)/.test(raw)) {
+		throw new Error(
+			`The phone number "${raw}" can only have digits, a leading + and the separators space, hyphen and parentheses (and no (0))`,
+		);
+	}
+	const digits = raw.replace(/\D/g, '');
+	let international: string | null = null;
+	if (raw.startsWith('+')) international = digits;
+	else if (digits.startsWith('00')) international = digits.slice(2);
+	else if (digits.length >= 11) international = digits;
+	if (international === null) {
+		throw new Error(
+			`The phone number "${raw}" is missing the country prefix: use the international format, for example +34600111222`,
+		);
+	}
+	const normalized = `+${international}`;
+	if (!/^\+[1-9]\d{6,14}$/.test(normalized)) {
+		throw new Error(`The phone number "${raw}" is not a valid international number`);
+	}
+	return normalized;
+}
+
+/** Template values are text, numbers or booleans; anything else would reach the lead as `[object Object]`. */
+function templateText(value: unknown, label: string): string {
+	if (value === undefined || value === null) return '';
+	if (typeof value === 'string') return value;
+	if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+	throw new Error(`${label} must be text, number or boolean`);
 }
 
 /** The template dropdown stores `name|language`. */
@@ -32,7 +68,7 @@ export function splitTemplateValue(value: string): { name: string; language: str
 }
 
 function headerParameter(input: TemplateComponentsInput): IDataObject | null {
-	const value = input.headerValue?.trim();
+	const value = templateText(input.headerValue, 'The header value').trim();
 	if (input.headerType === 'none' || !value) {
 		return null;
 	}
@@ -58,7 +94,7 @@ export function buildTemplateComponents(input: TemplateComponentsInput): IDataOb
 			type: 'body',
 			parameters: input.bodyVariables.map((row) => ({
 				type: 'text',
-				text: String(row.value ?? ''),
+				text: templateText(row.value, 'A body variable'),
 			})),
 		});
 	}
@@ -67,7 +103,7 @@ export function buildTemplateComponents(input: TemplateComponentsInput): IDataOb
 			type: 'button',
 			sub_type: 'url',
 			index: String(button.index ?? 0),
-			parameters: [{ type: 'text', text: String(button.value ?? '') }],
+			parameters: [{ type: 'text', text: templateText(button.value, 'A button value') }],
 		});
 	}
 	return components;
@@ -99,12 +135,27 @@ export function buildPauseBody(options: IDataObject): IDataObject {
 	};
 }
 
-/** Same execution, node and item, same key: n8n's Retry On Fail never sends twice. */
-export function idempotencyKeyFor(executionId: string, nodeId: string, itemIndex: number): string {
-	return `n8n:${executionId}:${nodeId}:${itemIndex}`;
+/**
+ * Same execution, node, run and item, same key: n8n's Retry On Fail never sends twice. The run
+ * index matters: Loop Over Items restarts `itemIndex` at 0 on every pass, so without it the second
+ * pass would reuse the first key and that lead would never get its message.
+ */
+export function idempotencyKeyFor(
+	executionId: string,
+	nodeId: string,
+	runIndex: number,
+	itemIndex: number,
+): string {
+	return `n8n:${executionId}:${nodeId}:${runIndex}:${itemIndex}`;
+}
+
+function isPlainObject(value: unknown): value is IDataObject {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function errorBodyOf(error: IDataObject): IDataObject | undefined {
+	// NodeApiError keeps the response body in context.data
+	const context = error.context as IDataObject | undefined;
 	const response = error.response as IDataObject | undefined;
 	const causeResponse = (error.cause as IDataObject | undefined)?.response as
 		| IDataObject
@@ -114,14 +165,11 @@ function errorBodyOf(error: IDataObject): IDataObject | undefined {
 		response?.body,
 		causeResponse?.data,
 		causeResponse?.body,
+		context?.data,
 		error.body,
 	];
 	return candidates.find(
-		(candidate) =>
-			typeof candidate === 'object' &&
-			candidate !== null &&
-			typeof (candidate as IDataObject).error === 'object' &&
-			(candidate as IDataObject).error !== null,
+		(candidate) => isPlainObject(candidate) && isPlainObject(candidate.error),
 	) as IDataObject | undefined;
 }
 
@@ -139,6 +187,31 @@ export function apiErrorOf(error: unknown): ApiErrorInfo | null {
 		message: String(detail.message ?? detail.code),
 		param: typeof detail.param === 'string' ? detail.param : null,
 		requestId: typeof detail.request_id === 'string' ? detail.request_id : null,
+		details: isPlainObject(detail.details) ? detail.details : null,
+	};
+}
+
+/** Text for the n8n error panel. A send with an unknown outcome must not be retried blindly. */
+export function describeApiError(detail: ApiErrorInfo): { message: string; description: string } {
+	const requestId = detail.requestId ? `Request ID: ${detail.requestId}.` : '';
+	if (detail.code === 'send_outcome_unknown') {
+		const callId =
+			typeof detail.details?.call_id === 'string' ? `Call ID: ${detail.details.call_id}.` : '';
+		return {
+			message: 'The send may have gone out',
+			description: [
+				'Check whether it was delivered before repeating it, and do not repeat it with a different idempotency key.',
+				callId,
+				requestId,
+			]
+				.filter(Boolean)
+				.join(' '),
+		};
+	}
+	const param = detail.param ? `Parameter: ${detail.param}.` : '';
+	return {
+		message: `${detail.code}: ${detail.message}`,
+		description: [param, requestId].filter(Boolean).join(' '),
 	};
 }
 
@@ -155,7 +228,9 @@ function statusOf(count: number): 'none' | 'unique' | 'few' {
 export function simplifyProperties(properties: IDataObject[]): IDataObject {
 	const property = properties.length === 1 ? properties[0] : {};
 	const listings = (property.listings as IDataObject[] | undefined) ?? [];
-	const listingOf = (operation: unknown) => listings.find((item) => item.operation === operation);
+	// Same rule as the API (propertyMappers.ts): a withdrawn listing must not give an old price or URL
+	const listingOf = (operation: unknown) =>
+		listings.find((item) => item.operation === operation && item.available === property.available);
 	const fieldOf = (operation: unknown, field: string) => listingOf(operation)?.[field] ?? null;
 	const matched = (property.matched_operation as string | null | undefined) ?? null;
 	const matchedGone = matched !== null && listingOf(matched)?.available !== true;

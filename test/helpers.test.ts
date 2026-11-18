@@ -1,3 +1,4 @@
+import { NodeApiError, type INode } from 'n8n-workflow';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -5,6 +6,7 @@ import {
 	buildLeadVariables,
 	buildPauseBody,
 	buildTemplateComponents,
+	describeApiError,
 	idempotencyKeyFor,
 	simplifyProperties,
 	splitTemplateValue,
@@ -12,9 +14,32 @@ import {
 } from '../nodes/Newlead/v2/helpers';
 
 describe('toE164', () => {
-	it('adds the plus sign and strips separators', () => {
-		expect(toE164('34 600-111-222')).toBe('+34600111222');
-		expect(toE164('+34600111222')).toBe('+34600111222');
+	it.each([
+		['34 600-111-222', '+34600111222'],
+		['+34600111222', '+34600111222'],
+		['+34 (600) 111 222', '+34600111222'],
+		['0034600111222', '+34600111222'],
+		['34600111222', '+34600111222'],
+		[34600111222, '+34600111222'],
+	])('accepts %s', (input, expected) => {
+		expect(toE164(input)).toBe(expected);
+	});
+
+	it.each([
+		'612345678',
+		'911234567',
+		'+34 (0) 600 111 222',
+		'+34600111222 ext 5',
+		'34600111222.0',
+		'',
+		null,
+		'0034',
+	])('rejects %j', (input) => {
+		expect(() => toE164(input)).toThrow();
+	});
+
+	it('says the country prefix is missing', () => {
+		expect(() => toE164('612345678')).toThrow(/country prefix.*\+34600111222/);
 	});
 });
 
@@ -60,6 +85,30 @@ describe('buildTemplateComponents', () => {
 			},
 			{ type: 'button', sub_type: 'url', index: '1', parameters: [{ type: 'text', text: 'abc' }] },
 		]);
+	});
+
+	it('accepts numbers and booleans and rejects objects and arrays', () => {
+		expect(
+			buildTemplateComponents({
+				headerType: 'text',
+				headerValue: 7 as never,
+				bodyVariables: [{ value: true }],
+				urlButtons: [],
+			}),
+		).toEqual([
+			{ type: 'header', parameters: [{ type: 'text', text: '7' }] },
+			{ type: 'body', parameters: [{ type: 'text', text: 'true' }] },
+		]);
+		const base = { headerType: 'none' as const, bodyVariables: [], urlButtons: [] };
+		expect(() =>
+			buildTemplateComponents({ ...base, bodyVariables: [{ value: { a: 1 } }] }),
+		).toThrow(/text, number or boolean/);
+		expect(() =>
+			buildTemplateComponents({ ...base, urlButtons: [{ index: 0, value: [1] }] }),
+		).toThrow(/text, number or boolean/);
+		expect(() =>
+			buildTemplateComponents({ ...base, headerType: 'text', headerValue: {} as never }),
+		).toThrow(/text, number or boolean/);
 	});
 
 	it('builds a text and an image header', () => {
@@ -117,8 +166,20 @@ describe('buildPauseBody', () => {
 });
 
 describe('idempotencyKeyFor', () => {
-	it('is stable for the same execution, node and item', () => {
-		expect(idempotencyKeyFor('101', 'node-1', 2)).toBe('n8n:101:node-1:2');
+	it('is stable for the same run and item', () => {
+		expect(idempotencyKeyFor('101', 'node-1', 0, 2)).toBe('n8n:101:node-1:0:2');
+	});
+
+	it('differs per run, so a Loop Over Items does not collide', () => {
+		expect(idempotencyKeyFor('101', 'node-1', 0, 0)).not.toBe(
+			idempotencyKeyFor('101', 'node-1', 1, 0),
+		);
+	});
+
+	it('differs per item', () => {
+		expect(idempotencyKeyFor('101', 'node-1', 0, 0)).not.toBe(
+			idempotencyKeyFor('101', 'node-1', 0, 1),
+		);
 	});
 });
 
@@ -133,6 +194,7 @@ describe('apiErrorOf', () => {
 			message: 'Already paused.',
 			param: null,
 			requestId: 'req-1',
+			details: null,
 		};
 		expect(apiErrorOf({ response: { data: body } })).toEqual(expected);
 		expect(apiErrorOf({ response: { body } })).toEqual(expected);
@@ -148,6 +210,73 @@ describe('apiErrorOf', () => {
 
 	it('is null for anything else', () => {
 		expect(apiErrorOf(new Error('socket hang up'))).toBeNull();
+	});
+
+	const node: INode = {
+		id: 'n1',
+		name: 'NewLead',
+		type: 'newlead',
+		typeVersion: 2,
+		position: [0, 0],
+		parameters: {},
+	};
+
+	it('reads the body of a real NodeApiError', () => {
+		const cause = Object.assign(new Error('Bad gateway'), {
+			response: {
+				status: 502,
+				data: {
+					error: {
+						code: 'send_outcome_unknown',
+						message: 'Unknown outcome.',
+						request_id: 'req-9',
+						details: { call_id: 'call-1' },
+					},
+				},
+			},
+		});
+		const error = new NodeApiError(node, cause as never);
+		expect(apiErrorOf(error)).toMatchObject({
+			code: 'send_outcome_unknown',
+			requestId: 'req-9',
+			details: { call_id: 'call-1' },
+		});
+	});
+
+	it('is null for a non-JSON or empty body', () => {
+		expect(apiErrorOf({ response: { data: '<html>Bad gateway</html>' } })).toBeNull();
+		expect(apiErrorOf({ response: { data: '' } })).toBeNull();
+		expect(apiErrorOf({ context: { data: undefined } })).toBeNull();
+	});
+});
+
+describe('describeApiError', () => {
+	it('warns the send may have gone out', () => {
+		const result = describeApiError({
+			code: 'send_outcome_unknown',
+			message: 'x',
+			param: null,
+			requestId: 'req-9',
+			details: { call_id: 'call-1' },
+		});
+		expect(result.message).toBe('The send may have gone out');
+		expect(result.description).toMatch(/check/i);
+		expect(result.description).toMatch(/different idempotency key/i);
+		expect(result.description).toContain('call-1');
+		expect(result.description).toContain('req-9');
+	});
+
+	it('shows code, message, param and request id for the rest', () => {
+		const result = describeApiError({
+			code: 'invalid_request',
+			message: 'Bad phone.',
+			param: 'to',
+			requestId: 'req-2',
+			details: null,
+		});
+		expect(result.message).toBe('invalid_request: Bad phone.');
+		expect(result.description).toContain('to');
+		expect(result.description).toContain('req-2');
 	});
 });
 
@@ -215,6 +344,28 @@ describe('simplifyProperties', () => {
 	it('is not available when the matched listing is gone', () => {
 		const gone = { ...property, listings: [property.listings[0]] };
 		expect(simplifyProperties([gone])).toMatchObject({ available: false, price: null });
+	});
+
+	it('ignores a withdrawn listing for price and URL', () => {
+		const withdrawn = {
+			...property,
+			listings: [
+				{
+					operation: 'rent',
+					price: 700,
+					idealista_code: '333',
+					url: 'https://i.co/old',
+					available: false,
+				},
+				property.listings[1],
+			],
+		};
+		expect(simplifyProperties([withdrawn])).toMatchObject({
+			price: 900,
+			price_rent: 900,
+			reference_rent: '222',
+			url_rent: 'https://i.co/222',
+		});
 	});
 
 	it('says few and none without property fields', () => {
