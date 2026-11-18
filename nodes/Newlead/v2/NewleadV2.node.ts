@@ -280,8 +280,8 @@ export class NewleadV2 implements INodeType {
 	methods = {
 		loadOptions: {
 			async getTextAgents(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-				const page = await v1Request.call(this, 'GET', '/text_agents');
-				return (page.data as IDataObject[]).map((agent) => ({
+				const agents = await v1RequestAll.call(this, '/text_agents');
+				return agents.map((agent) => ({
 					name: agent.name as string,
 					value: agent.id as string,
 				}));
@@ -290,8 +290,8 @@ export class NewleadV2 implements INodeType {
 			async getTemplates(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				const textAgentId = this.getCurrentNodeParameter('textAgentId') as string;
 				if (!textAgentId) return [];
-				const page = await v1Request.call(this, 'GET', `/text_agents/${textAgentId}/templates`);
-				return (page.data as IDataObject[])
+				const templates = await v1RequestAll.call(this, `/text_agents/${textAgentId}/templates`);
+				return templates
 					.filter((template) => String(template.status).toUpperCase() === 'APPROVED')
 					.map((template) => ({
 						name: `${template.name as string} (${template.language as string})`,

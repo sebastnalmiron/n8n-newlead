@@ -510,3 +510,48 @@ describe('versioning', () => {
 		expect(versioned.getNodeType(1)).not.toBeInstanceOf(NewleadV2);
 	});
 });
+
+describe('Dropdowns follow pagination', () => {
+	function loadContext(responses: IDataObject[], current: Params = {}) {
+		let call = 0;
+		const request = vi.fn(async () => responses[Math.min(call++, responses.length - 1)]);
+		const context = {
+			getNode: () => node,
+			getCurrentNodeParameter: (name: string) => current[name],
+			getCredentials: async () => ({ baseUrl: 'https://api.newlead.ai' }),
+			helpers: { httpRequestWithAuthentication: request },
+		} as never;
+		return { context, request };
+	}
+	const loadOptions = new NewleadV2({} as never).methods.loadOptions;
+
+	it('getTextAgents returns agents from every page', async () => {
+		const { context, request } = loadContext([
+			{ data: [{ id: 'a1', name: 'One' }], has_more: true, next_cursor: 'c1' },
+			{ data: [{ id: 'a2', name: 'Two' }], has_more: false, next_cursor: null },
+		]);
+		const options = await loadOptions.getTextAgents.call(context);
+		expect(options.map((option) => option.value)).toEqual(['a1', 'a2']);
+		expect(request).toHaveBeenCalledTimes(2);
+	});
+
+	it('getTemplates finds an approved template on the second page', async () => {
+		const { context } = loadContext(
+			[
+				{
+					data: [{ name: 'old', language: 'es', status: 'REJECTED', category: 'UTILITY' }],
+					has_more: true,
+					next_cursor: 'c1',
+				},
+				{
+					data: [{ name: 'welcome', language: 'es', status: 'APPROVED', category: 'UTILITY' }],
+					has_more: false,
+					next_cursor: null,
+				},
+			],
+			{ textAgentId: AGENT },
+		);
+		const options = await loadOptions.getTemplates.call(context);
+		expect(options.map((option) => option.value)).toEqual(['welcome|es']);
+	});
+});
