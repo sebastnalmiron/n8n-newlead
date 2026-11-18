@@ -21,7 +21,7 @@ export class NewleadApi implements ICredentialType {
 			},
 			default: '',
 			required: true,
-			description: 'API key of the subaccount, created in Configuración › API',
+			description: 'API key of the subaccount, created in Settings › API',
 		},
 		{
 			displayName: 'Base URL',
