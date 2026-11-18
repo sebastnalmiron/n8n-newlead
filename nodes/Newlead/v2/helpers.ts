@@ -139,7 +139,7 @@ export function buildPauseBody(options: IDataObject): IDataObject {
 	const minutes = Math.floor(duration);
 	const reason = String(options.reason ?? '').trim();
 	return {
-		...(minutes > 0 ? { duration_min: minutes } : {}),
+		...(minutes > 0 ? { duration_minutes: minutes } : {}),
 		...(reason ? { reason } : {}),
 	};
 }

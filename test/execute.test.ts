@@ -308,7 +308,7 @@ describe('AI Control', () => {
 		await run();
 		const options = sent(request);
 		expect(options.url).toBe(`https://api.newlead.ai/v1/leads/${LEAD}/pause_ai`);
-		expect(options.body).toEqual({ duration_min: 30 });
+		expect(options.body).toEqual({ duration_minutes: 30 });
 		expect(options.headers).toBeUndefined();
 	});
 });

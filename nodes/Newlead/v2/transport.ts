@@ -58,8 +58,7 @@ export async function v1Request(
 }
 
 /**
- * Every page of a paginated list (leads, messages, calls), following next_cursor. Not for
- * /text_agents or /templates: they are a single page and the API rejects `limit` there.
+ * Every page of a paginated list (leads, messages, calls), following next_cursor.
  * It always ends, and never returns a partial list: a page that says has_more without a
  * next_cursor, or one that repeats a cursor, throws.
  */

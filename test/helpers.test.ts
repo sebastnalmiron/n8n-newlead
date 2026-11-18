@@ -201,7 +201,7 @@ describe('buildPauseBody', () => {
 		expect(buildPauseBody({})).toEqual({});
 		expect(buildPauseBody({ durationMin: 0, reason: '' })).toEqual({});
 		expect(buildPauseBody({ durationMin: 45.9, reason: 'Visita' })).toEqual({
-			duration_min: 45,
+			duration_minutes: 45,
 			reason: 'Visita',
 		});
 	});
