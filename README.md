@@ -6,6 +6,10 @@ Newlead is a WhatsApp CRM platform for managing leads, sending templates, and co
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/sustainable-use-license/) workflow automation platform.
 
+## 2.0.0
+
+The node now has two versions. Existing workflows keep version 1 and nothing changes for them. New nodes use version 2, which talks to the public API (`/v1`) and sends an `Idempotency-Key` on every send. Version 2 needs a subaccount API key, cannot be used as an AI agent tool, and requires phone numbers with the country code. Migration guide: https://docs.newlead.ai/migrar-rutas-antiguas
+
 [Installation](#installation)
 [Operations](#operations)
 [Credentials](#credentials)
@@ -59,6 +63,12 @@ For new n8n users, check out the [Try it out](https://docs.n8n.io/try-it-out/) d
 * [Newlead Documentation](https://newlead.ai)
 
 ## Version history
+
+### 2.0.0
+- New node version 2 on the public API (`/v1`); workflows saved with version 1 are unchanged
+- Sends carry an `Idempotency-Key`; the **Idempotency Key** option fixes your own
+- Not available as an AI agent tool; errors carry `details`, including `outcome_unknown`
+- Left out: lookup by WhatsApp ID, `currency` and `date_time` template variables, `quick_reply` buttons
 
 ### 0.10.0
 - Template → Send: **Source Lead ID** joins the lead that receives the template to the person of another lead (e.g. the web chat they called from)
