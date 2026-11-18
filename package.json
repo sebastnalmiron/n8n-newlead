@@ -27,6 +27,7 @@
         "build:watch": "tsc --watch",
         "dev": "n8n-node dev",
         "lint": "n8n-node lint",
+        "test": "vitest run --maxWorkers=1",
         "lint:fix": "n8n-node lint --fix",
         "release": "n8n-node release",
         "prepublishOnly": "n8n-node prerelease"
@@ -49,7 +50,8 @@
         "eslint": "9.32.0",
         "prettier": "3.6.2",
         "release-it": "^19.0.4",
-        "typescript": "5.9.2"
+        "typescript": "5.9.2",
+        "vitest": "^4.1.12"
     },
     "peerDependencies": {
         "n8n-workflow": "*"
