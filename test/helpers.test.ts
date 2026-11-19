@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	apiErrorOf,
-	assertLeadId,
+	assertId,
 	buildLeadVariables,
 	buildListQuery,
 	buildPauseBody,
@@ -158,9 +158,9 @@ describe('buildLeadVariables', () => {
 	});
 });
 
-describe('assertLeadId', () => {
+describe('assertId', () => {
 	it('returns a valid UUID, trimmed', () => {
-		expect(assertLeadId(' 22222222-2222-4222-8222-222222222222 ')).toBe(
+		expect(assertId(' 22222222-2222-4222-8222-222222222222 ', 'lead ID')).toBe(
 			'22222222-2222-4222-8222-222222222222',
 		);
 	});
@@ -168,9 +168,13 @@ describe('assertLeadId', () => {
 	it.each([[''], ['   '], [undefined], [null], ['abc'], ['123'], [42]])(
 		'rejects %j before any request is made',
 		(value) => {
-			expect(() => assertLeadId(value)).toThrow(/lead ID/);
+			expect(() => assertId(value, 'lead ID')).toThrow(/lead ID/);
 		},
 	);
+
+	it('names the id it checks', () => {
+		expect(() => assertId('abc', 'call ID')).toThrow('The call ID "abc" is not valid');
+	});
 });
 
 describe('pickIdempotencyKey', () => {

@@ -8,6 +8,7 @@ const node = { id: 'node-1', name: 'Newlead', type: 'n8n-nodes-newlead.newlead',
 const AGENT = '11111111-1111-4111-8111-111111111111';
 const LEAD = '22222222-2222-4222-8222-222222222222';
 const VOICE = '55555555-5555-4555-8555-555555555555';
+const CALL = '44444444-4444-4444-8444-444444444444';
 
 type Params = Record<string, unknown>;
 
@@ -529,6 +530,95 @@ describe('Property > Get by Reference: more than 3 matches', () => {
 	});
 });
 
+describe('Call', () => {
+	const start = {
+		resource: 'call',
+		operation: 'start',
+		voiceAgentId: VOICE,
+		phoneNumber: '+34 600 111 222',
+	};
+
+	it('start posts the call with the lead context and the idempotency key', async () => {
+		const { run, request } = setup(
+			{
+				...start,
+				leadName: ' Ana ',
+				'leadVariables.variables': [
+					{ key: 'ref', value: 'REF-1' },
+					{ key: 'x', value: '' },
+				],
+			},
+			[{ object: 'call', id: CALL }],
+		);
+		await run();
+		const options = sent(request);
+		expect(options.method).toBe('POST');
+		expect(options.url).toBe('https://api.newlead.ai/v1/calls');
+		expect(options.body).toEqual({
+			voice_agent_id: VOICE,
+			to: '+34600111222',
+			lead: { name: 'Ana', variables: { ref: 'REF-1' } },
+		});
+		expect(options.headers).toEqual({ 'Idempotency-Key': 'n8n:exec-9:node-1:0:0' });
+	});
+
+	it('start leaves lead out without a name or a variable, and takes the own key', async () => {
+		const { run, request } = setup({ ...start, callOptions: { idempotencyKey: ' crm-3 ' } }, [{}]);
+		await run();
+		expect(sent(request).body).toEqual({ voice_agent_id: VOICE, to: '+34600111222' });
+		expect(sent(request).headers).toEqual({ 'Idempotency-Key': 'crm-3' });
+	});
+
+	it('start with a local number calls nobody', async () => {
+		const { run, request } = setup({ ...start, phoneNumber: '600111222' });
+		await expect(run()).rejects.toBeInstanceOf(NodeOperationError);
+		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('get reads the call with its transcript, without key', async () => {
+		const { run, request } = setup({ resource: 'call', operation: 'get', callId: ` ${CALL} ` }, [
+			{ id: CALL, transcript: [] },
+		]);
+		await run();
+		expect(sent(request).method).toBe('GET');
+		expect(sent(request).url).toBe(`https://api.newlead.ai/v1/calls/${CALL}`);
+		expect(sent(request).headers).toBeUndefined();
+	});
+
+	it('get with an invalid id fails before any request', async () => {
+		const { run, request } = setup({ resource: 'call', operation: 'get', callId: 'abc' });
+		await expect(run()).rejects.toThrow(/call ID/);
+		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('getMany sends the filters, the dates in UTC and the limit', async () => {
+		const { run, request } = setup(
+			{
+				resource: 'call',
+				operation: 'getMany',
+				returnAll: false,
+				limit: 5,
+				callFilters: {
+					voiceAgentId: VOICE,
+					direction: 'outbound',
+					leadId: ' ',
+					startedAfter: '2026-11-19T10:00:00',
+				},
+			},
+			[{ data: [{ id: 'c1' }, { id: 'c2' }] }],
+		);
+		const [result] = await run();
+		expect(sent(request).url).toBe('https://api.newlead.ai/v1/calls');
+		expect(sent(request).qs).toEqual({
+			voice_agent_id: VOICE,
+			direction: 'outbound',
+			started_after: '2026-11-19T09:00:00.000Z',
+			limit: '5',
+		});
+		expect(result.map((item) => item.json.id)).toEqual(['c1', 'c2']);
+	});
+});
+
 describe('continueOnFail', () => {
 	const getLead = {
 		resource: 'lead',
@@ -690,5 +780,13 @@ describe('Dropdowns follow pagination', () => {
 			text_agent_id: AGENT,
 			limit: '100',
 		});
+	});
+	it('getVoiceAgents lists every voice agent, with or without a text agent', async () => {
+		const { context } = loadContext([
+			{ data: [{ id: 'v1', name: 'Solo', text_agent_id: null }], has_more: true, next_cursor: 'c1' },
+			{ data: [{ id: 'v2', name: 'Linked', text_agent_id: AGENT }], has_more: false, next_cursor: null },
+		]);
+		const options = await loadOptions.getVoiceAgents.call(context);
+		expect(options.map((option) => option.value)).toEqual(['v1', 'v2']);
 	});
 });

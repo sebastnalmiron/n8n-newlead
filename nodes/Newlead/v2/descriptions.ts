@@ -152,7 +152,7 @@ const IDEMPOTENCY_KEY_OPTION: INodeProperties = {
 	type: 'string',
 	default: '',
 	description:
-		'A stable key of your own, different for every send (for example the record ID in your CRM plus the reason for the message). Running the workflow again with the same key does not send again, for 24 hours; the same key with another message is rejected. Up to 255 characters.',
+		'A stable key of your own, different for every send or call (for example the record ID in your CRM plus the reason). Running the workflow again with the same key does not repeat it, for 24 hours; the same key with another request is rejected. Up to 255 characters.',
 };
 
 const templateProperties: INodeProperties[] = [
@@ -502,6 +502,143 @@ const aiControlProperties: INodeProperties[] = [
 	},
 ];
 
+const CALL_START = { resource: ['call'], operation: ['start'] };
+const CALL_BY_ID = { resource: ['call'], operation: ['get'] };
+const CALL_GET_MANY = { resource: ['call'], operation: ['getMany'] };
+
+const CALL_STATUS_OPTIONS = [
+	{ name: 'Completed', value: 'completed' },
+	{ name: 'Dropped', value: 'dropped' },
+	{ name: 'Failed', value: 'failed' },
+	{ name: 'In Progress', value: 'in_progress' },
+	{ name: 'No Answer', value: 'no_answer' },
+	{ name: 'Rejected', value: 'rejected' },
+];
+
+const callProperties: INodeProperties[] = [
+	operationField(
+		'call',
+		[
+			{ name: 'Get', value: 'get', description: 'Get a call with its transcript', action: 'Get a call' },
+			{
+				name: 'Get Many',
+				value: 'getMany',
+				description: 'Get many calls, newest first',
+				action: 'Get many calls',
+			},
+			{
+				name: 'Start',
+				value: 'start',
+				description: 'Have a voice agent call a phone number',
+				action: 'Start a call',
+			},
+		],
+		'start',
+	),
+	voiceAgentField(
+		CALL_START,
+		'getVoiceAgents',
+		'The voice agent that calls. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+	),
+	{
+		displayName: 'Phone Number',
+		name: 'phoneNumber',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: '+34600111222',
+		displayOptions: { show: CALL_START },
+		description:
+			'Number to call, with country code. The lead is created if the agent has none with this number.',
+	},
+	{
+		displayName: 'Lead Name',
+		name: 'leadName',
+		type: 'string',
+		default: '',
+		displayOptions: { show: CALL_START },
+		description: 'Replaces the name of the lead before dialing, so the agent can use it',
+	},
+	variablesField(CALL_START),
+	{
+		displayName: 'Options',
+		name: 'callOptions',
+		type: 'collection',
+		placeholder: 'Add Option',
+		default: {},
+		displayOptions: { show: CALL_START },
+		options: [IDEMPOTENCY_KEY_OPTION],
+	},
+	{
+		displayName: 'Call ID',
+		name: 'callId',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: '00000000-0000-4000-8000-000000000001',
+		displayOptions: { show: CALL_BY_ID },
+	},
+	...getManyFields(CALL_GET_MANY),
+	{
+		displayName: 'Filters',
+		name: 'callFilters',
+		type: 'collection',
+		placeholder: 'Add Filter',
+		default: {},
+		displayOptions: { show: CALL_GET_MANY },
+		options: [
+			{
+				displayName: 'Direction',
+				name: 'direction',
+				type: 'options',
+				options: [
+					{ name: 'Inbound', value: 'inbound' },
+					{ name: 'Outbound', value: 'outbound' },
+					{ name: 'Web', value: 'web' },
+				],
+				default: 'outbound',
+			},
+			{
+				displayName: 'Lead ID',
+				name: 'leadId',
+				type: 'string',
+				default: '',
+				description: 'Only calls of this lead',
+			},
+			{
+				displayName: 'Started After',
+				name: 'startedAfter',
+				type: 'dateTime',
+				default: '',
+				description: 'Calls started at or after this time',
+			},
+			{
+				displayName: 'Started Before',
+				name: 'startedBefore',
+				type: 'dateTime',
+				default: '',
+				description: 'Calls started before this time',
+			},
+			{
+				displayName: 'Status',
+				name: 'status',
+				type: 'options',
+				options: CALL_STATUS_OPTIONS,
+				default: 'completed',
+			},
+			{
+				displayName: 'Voice Agent Name or ID',
+				name: 'voiceAgentId',
+				type: 'options',
+				typeOptions: { loadOptionsMethod: 'getVoiceAgents' },
+				default: '',
+				description:
+					'Only calls of this voice agent. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+			},
+		],
+	},
+];
+
 const propertyProperties: INodeProperties[] = [
 	operationField(
 		'property',
@@ -550,6 +687,7 @@ export const nodeProperties: INodeProperties[] = [
 		noDataExpression: true,
 		options: [
 			{ name: 'AI Control', value: 'aiControl', description: 'Pause or resume the AI for a lead' },
+			{ name: 'Call', value: 'call', description: 'Start voice calls and read them' },
 			{ name: 'Lead', value: 'lead', description: 'Manage leads' },
 			{ name: 'Message', value: 'message', description: 'Send text messages' },
 			{ name: 'Property', value: 'property', description: 'Get properties imported from Idealista' },
@@ -561,5 +699,6 @@ export const nodeProperties: INodeProperties[] = [
 	...messageProperties,
 	...leadProperties,
 	...aiControlProperties,
+	...callProperties,
 	...propertyProperties,
 ];

@@ -14,7 +14,7 @@ import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workf
 
 import { nodeProperties } from './descriptions';
 import {
-	assertLeadId,
+	assertId,
 	buildLeadVariables,
 	buildListQuery,
 	buildPauseBody,
@@ -43,6 +43,20 @@ const LEAD_FILTERS: Record<string, ListFilter> = {
 	lastActivityAfter: { parameter: 'last_activity_after', date: true },
 	lastActivityBefore: { parameter: 'last_activity_before', date: true },
 };
+
+/** Call > Get Many: each filter of the node and its query parameter in /v1. */
+const CALL_FILTERS: Record<string, ListFilter> = {
+	voiceAgentId: { parameter: 'voice_agent_id' },
+	leadId: { parameter: 'lead_id' },
+	direction: { parameter: 'direction' },
+	status: { parameter: 'status' },
+	startedAfter: { parameter: 'started_after', date: true },
+	startedBefore: { parameter: 'started_before', date: true },
+};
+
+function voiceAgentOptions(agents: IDataObject[]): INodePropertyOptions[] {
+	return agents.map((agent) => ({ name: agent.name as string, value: agent.id as string }));
+}
 
 function leadLabel(lead: IDataObject): string {
 	const contact = (lead.phone as string) || (lead.username ? `@${lead.username as string}` : '');
@@ -94,7 +108,7 @@ async function resolveLeadId(
 ): Promise<string> {
 	const locator = context.getNodeParameter('leadId', itemIndex) as IDataObject;
 	if (locator.mode !== 'phone') {
-		return assertLeadId(locator.value);
+		return assertId(locator.value, 'lead ID');
 	}
 	const value = String(locator.value ?? '').trim();
 	const page = await v1Request.call(context, 'GET', '/leads', {
@@ -280,6 +294,43 @@ async function runProperty(
 	return simplify ? simplifyProperties(page.data as IDataObject[]) : page;
 }
 
+async function startCall(context: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
+	const options = context.getNodeParameter('callOptions', itemIndex, {}) as IDataObject;
+	const name = String(context.getNodeParameter('leadName', itemIndex, '')).trim();
+	const variables = variablesOf(context, itemIndex);
+	// Written on the lead before dialing, so the agent uses them during the call
+	const lead = { ...(name ? { name } : {}), ...(variables ? { variables } : {}) };
+	return await v1Request.call(context, 'POST', '/calls', {
+		idempotencyKey: idempotencyKey(context, itemIndex, options),
+		body: {
+			voice_agent_id: context.getNodeParameter('voiceAgentId', itemIndex) as string,
+			to: toE164(context.getNodeParameter('phoneNumber', itemIndex) as string),
+			...(Object.keys(lead).length > 0 ? { lead } : {}),
+		},
+	});
+}
+
+async function runCall(
+	context: IExecuteFunctions,
+	operation: string,
+	itemIndex: number,
+): Promise<IDataObject | IDataObject[]> {
+	if (operation === 'start') {
+		return await startCall(context, itemIndex);
+	}
+	if (operation === 'getMany') {
+		const filters = context.getNodeParameter('callFilters', itemIndex, {}) as IDataObject;
+		return await getMany(
+			context,
+			itemIndex,
+			'/calls',
+			buildListQuery(filters, CALL_FILTERS, context.getTimezone()),
+		);
+	}
+	const callId = assertId(context.getNodeParameter('callId', itemIndex), 'call ID');
+	return await v1Request.call(context, 'GET', `/calls/${callId}`);
+}
+
 async function runItem(
 	context: IExecuteFunctions,
 	resource: string,
@@ -295,6 +346,8 @@ async function runItem(
 			return await runLead(context, operation, itemIndex);
 		case 'aiControl':
 			return await runAiControl(context, operation, itemIndex);
+		case 'call':
+			return await runCall(context, operation, itemIndex);
 		case 'property':
 			return await runProperty(context, operation, itemIndex);
 		default:
@@ -333,9 +386,11 @@ export class NewleadV2 implements INodeType {
 			async getStandaloneVoiceAgents(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				const agents = await v1RequestAll.call(this, '/voice_agents');
 				// A voice agent with a text agent has no leads of its own: they are the text agent's
-				return agents
-					.filter((agent) => !agent.text_agent_id)
-					.map((agent) => ({ name: agent.name as string, value: agent.id as string }));
+				return voiceAgentOptions(agents.filter((agent) => !agent.text_agent_id));
+			},
+
+			async getVoiceAgents(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				return voiceAgentOptions(await v1RequestAll.call(this, '/voice_agents'));
 			},
 
 			async getTemplates(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {

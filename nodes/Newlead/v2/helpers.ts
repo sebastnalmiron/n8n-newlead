@@ -241,15 +241,15 @@ export function buildListQuery(
 	return query;
 }
 
-const LEAD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** A lead id outside the phone mode. An empty one would turn GET /v1/leads/{id} into the lead list. */
-export function assertLeadId(value: unknown): string {
+/** An id typed by hand, checked before any request. An empty one would turn GET /v1/leads/{id} into the list. */
+export function assertId(value: unknown, label: string): string {
 	const raw = typeof value === 'string' ? value : '';
 	const id = raw.trim();
-	if (!LEAD_ID_PATTERN.test(id)) {
+	if (!UUID_PATTERN.test(id)) {
 		throw new Error(
-			`The lead ID "${raw}" is not valid: it must be a UUID such as 00000000-0000-4000-8000-000000000001`,
+			`The ${label} "${raw}" is not valid: it must be a UUID such as 00000000-0000-4000-8000-000000000001`,
 		);
 	}
 	return id;
