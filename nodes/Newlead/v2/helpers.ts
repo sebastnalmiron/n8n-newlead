@@ -449,3 +449,118 @@ export function recordingFile(
 		...(/^(audio|video)\//.test(type) ? { mimeType: type } : {}),
 	};
 }
+
+/** 1 to 50 letters, digits, dots, hyphens or underscores, and not only dots (`..` would be read as a path). */
+const PROPERTY_REFERENCE = /^(?!\.+$)[A-Za-z0-9._-]{1,50}$/;
+
+/** The reference of PUT and DELETE /v1/properties/{reference}. */
+export function assertPropertyReference(value: unknown): string {
+	const reference = String(value ?? '').trim();
+	if (!PROPERTY_REFERENCE.test(reference)) {
+		throw new Error(
+			`The reference "${reference}" must have 1 to 50 letters, digits, dots, hyphens or underscores, and not only dots`,
+		);
+	}
+	return reference;
+}
+
+export interface PropertyBodyInput {
+	type: string;
+	listings: IDataObject[];
+	fields: IDataObject;
+}
+
+function textOf(value: unknown): string | undefined {
+	if (value === undefined || value === null) return undefined;
+	const text = String(value).trim();
+	return text === '' ? undefined : text;
+}
+
+function integerOf(value: unknown, label: string): number | undefined {
+	const text = textOf(value);
+	if (text === undefined) return undefined;
+	if (!/^\d+$/.test(text)) {
+		throw new Error(`${label} "${text}" must be a whole number`);
+	}
+	return Number(text);
+}
+
+/**
+ * A price in euros; empty or 0 means "no listing". A text with a dot and three digits (198.000)
+ * is rejected: read as a number it would be 198 €, and a wrong price is worse than an error.
+ */
+function priceOf(value: unknown): number | undefined {
+	const text = textOf(value);
+	if (text === undefined) return undefined;
+	if (!/^\d+(\.\d{1,2})?$/.test(text)) {
+		throw new Error(`The price "${text}" must be a number in euros, such as 198000 or 720.50`);
+	}
+	const price = Number(text);
+	return price > 0 ? price : undefined;
+}
+
+/** Features from the multi-select, or from an expression as a list or as comma-separated text. */
+function featuresOf(value: unknown): string[] {
+	const list: unknown[] = Array.isArray(value) ? value : String(value ?? '').split(',');
+	return [...new Set(list.map((item) => String(item).trim()).filter(Boolean))];
+}
+
+/** Image links one per line, or a list from an expression: links or `{ url, label }` objects. */
+function imagesOf(value: unknown): IDataObject[] {
+	const list: unknown[] = Array.isArray(value) ? value : String(value ?? '').split(/\r?\n/);
+	return list.flatMap((item): IDataObject[] => {
+		if (isPlainObject(item)) {
+			const url = textOf(item.url);
+			const label = textOf(item.label);
+			return url ? [{ url, ...(label ? { label } : {}) }] : [];
+		}
+		const url = textOf(item);
+		return url ? [{ url }] : [];
+	});
+}
+
+function hasValue(value: unknown): boolean {
+	if (Array.isArray(value)) return value.length > 0;
+	if (isPlainObject(value)) return Object.keys(value).length > 0;
+	return value !== undefined;
+}
+
+/** Only the fields with a value: no undefined, empty list or empty object. */
+function compact(object: IDataObject): IDataObject {
+	return Object.fromEntries(Object.entries(object).filter(([, value]) => hasValue(value)));
+}
+
+/**
+ * The body of PUT /v1/properties/{reference}. Empty fields are left out; the PUT replaces the whole
+ * property, so the API clears them.
+ */
+export function buildPropertyBody(input: PropertyBodyInput): IDataObject {
+	const listings = input.listings.flatMap((row) => {
+		const price = priceOf(row.price);
+		return price === undefined
+			? []
+			: [{ operation: row.listingOperation, price, available: row.available !== false }];
+	});
+	if (listings.length === 0) {
+		throw new Error('Add a listing with its price: sale, rent or both');
+	}
+	const fields = input.fields;
+	return compact({
+		type: input.type,
+		listings,
+		address: compact({
+			street: textOf(fields.street),
+			street_number: textOf(fields.streetNumber),
+			postal_code: textOf(fields.postalCode),
+			city: textOf(fields.city),
+			visibility: textOf(fields.addressVisibility),
+		}),
+		bedrooms: integerOf(fields.bedrooms, 'Bedrooms'),
+		bathrooms: integerOf(fields.bathrooms, 'Bathrooms'),
+		built_m2: integerOf(fields.builtM2, 'Built Area'),
+		description: textOf(fields.description),
+		features: featuresOf(fields.features),
+		agent_notes: textOf(fields.agentNotes),
+		images: imagesOf(fields.images),
+	});
+}

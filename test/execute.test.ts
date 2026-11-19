@@ -689,6 +689,73 @@ describe('Call > Get Recording', () => {
 	});
 });
 
+describe('Property > Create or Update and Delete', () => {
+	const upsert = {
+		resource: 'property',
+		operation: 'upsert',
+		reference: ' REF-1 ',
+		propertyType: 'flat',
+		'listings.listing': [
+			{ listingOperation: 'sale', price: 198000, available: true },
+			{ listingOperation: 'rent', price: '', available: true },
+		],
+		propertyFields: {
+			city: 'Madrid',
+			postalCode: '28013',
+			bedrooms: 3,
+			features: ['lift', 'terrace'],
+			images: 'https://cdn.example.com/1.jpg\nhttps://cdn.example.com/2.jpg',
+		},
+	};
+
+	it('puts the whole property by reference, without an idempotency key', async () => {
+		const { run, request } = setup(upsert, [{ object: 'property', id: 'p1', warnings: [] }]);
+		const [result] = await run();
+		const options = sent(request);
+		expect(options.method).toBe('PUT');
+		expect(options.url).toBe('https://api.newlead.ai/v1/properties/REF-1');
+		expect(options.headers).toBeUndefined();
+		expect(options.body).toEqual({
+			type: 'flat',
+			listings: [{ operation: 'sale', price: 198000, available: true }],
+			address: { postal_code: '28013', city: 'Madrid' },
+			bedrooms: 3,
+			features: ['lift', 'terrace'],
+			images: [{ url: 'https://cdn.example.com/1.jpg' }, { url: 'https://cdn.example.com/2.jpg' }],
+		});
+		expect(result[0].json).toMatchObject({ id: 'p1', warnings: [] });
+	});
+
+	it('sends nothing without a listing price', async () => {
+		const { run, request } = setup({
+			...upsert,
+			'listings.listing': [{ listingOperation: 'sale', price: 0, available: true }],
+		});
+		await expect(run()).rejects.toThrow(/listing/);
+		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('rejects a reference that would be read as a path', async () => {
+		for (const reference of ['..', 'REF/1', '']) {
+			const { run, request } = setup({ ...upsert, reference });
+			await expect(run()).rejects.toThrow(/reference/);
+			expect(request).not.toHaveBeenCalled();
+		}
+	});
+
+	it('delete sends DELETE with the reference and nothing else', async () => {
+		const { run, request } = setup({ resource: 'property', operation: 'delete', reference: 'REF-1' }, [
+			{ object: 'property', deleted: true },
+		]);
+		await run();
+		expect(sent(request)).toEqual({
+			method: 'DELETE',
+			url: 'https://api.newlead.ai/v1/properties/REF-1',
+			json: true,
+		});
+	});
+});
+
 describe('continueOnFail', () => {
 	const getLead = {
 		resource: 'lead',

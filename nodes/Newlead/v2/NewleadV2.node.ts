@@ -15,9 +15,11 @@ import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workf
 import { nodeProperties } from './descriptions';
 import {
 	assertId,
+	assertPropertyReference,
 	buildLeadVariables,
 	buildListQuery,
 	buildPauseBody,
+	buildPropertyBody,
 	buildTemplateComponents,
 	errorDetails,
 	isTooManyMatches,
@@ -274,6 +276,12 @@ async function runAiControl(
 	return { lead_id: lead.id, ai_paused: lead.ai_paused, ai_paused_until: lead.ai_paused_until };
 }
 
+/** The path of PUT and DELETE /v1/properties/{reference}. */
+function propertyPath(context: IExecuteFunctions, itemIndex: number): string {
+	const reference = assertPropertyReference(context.getNodeParameter('reference', itemIndex));
+	return `/properties/${encodeURIComponent(reference)}`;
+}
+
 async function runProperty(
 	context: IExecuteFunctions,
 	operation: string,
@@ -281,6 +289,19 @@ async function runProperty(
 ): Promise<IDataObject | IDataObject[]> {
 	if (operation === 'getMany') {
 		return await getMany(context, itemIndex, '/properties');
+	}
+	if (operation === 'delete') {
+		return await v1Request.call(context, 'DELETE', propertyPath(context, itemIndex));
+	}
+	if (operation === 'upsert') {
+		// A PUT is idempotent by itself: no Idempotency-Key
+		return await v1Request.call(context, 'PUT', propertyPath(context, itemIndex), {
+			body: buildPropertyBody({
+				type: context.getNodeParameter('propertyType', itemIndex) as string,
+				listings: context.getNodeParameter('listings.listing', itemIndex, []) as IDataObject[],
+				fields: context.getNodeParameter('propertyFields', itemIndex, {}) as IDataObject,
+			}),
+		});
 	}
 	const reference = String(context.getNodeParameter('reference', itemIndex)).trim();
 	const simplify = context.getNodeParameter('simplify', itemIndex, true);

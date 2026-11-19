@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import {
 	apiErrorOf,
 	assertId,
+	assertPropertyReference,
 	buildLeadVariables,
 	buildListQuery,
 	buildPauseBody,
+	buildPropertyBody,
 	buildTemplateComponents,
 	describeApiError,
 	idempotencyKeyFor,
@@ -503,5 +505,94 @@ describe('recordingFile', () => {
 		expect(recordingFile('https://rec.example.com/egress?sig=1', 'c1', 'application/octet-stream')).toEqual({
 			fileName: 'call-c1',
 		});
+	});
+});
+
+describe('buildPropertyBody', () => {
+	const base = {
+		type: 'flat',
+		listings: [{ listingOperation: 'rent', price: '720.50', available: false }],
+		fields: {},
+	};
+
+	it('keeps only what has a value', () => {
+		expect(buildPropertyBody(base)).toEqual({
+			type: 'flat',
+			listings: [{ operation: 'rent', price: 720.5, available: false }],
+		});
+	});
+
+	it('rejects a price with thousands dots instead of reading 198 €', () => {
+		expect(() =>
+			buildPropertyBody({ ...base, listings: [{ listingOperation: 'sale', price: '198.000' }] }),
+		).toThrow(/198000/);
+	});
+
+	it('skips listings without a price, and fails when none is left', () => {
+		expect(() =>
+			buildPropertyBody({
+				...base,
+				listings: [
+					{ listingOperation: 'sale', price: 0 },
+					{ listingOperation: 'rent', price: ' ' },
+				],
+			}),
+		).toThrow(/listing/);
+	});
+
+	it('reads the features and images an expression gives', () => {
+		expect(
+			buildPropertyBody({
+				...base,
+				fields: {
+					features: 'lift, terrace, lift,',
+					images: [{ url: 'https://a.example.com/1.jpg', label: 'kitchen' }, 'https://a.example.com/2.jpg', { label: 'no link' }],
+				},
+			}),
+		).toEqual({
+			type: 'flat',
+			listings: [{ operation: 'rent', price: 720.5, available: false }],
+			features: ['lift', 'terrace'],
+			images: [{ url: 'https://a.example.com/1.jpg', label: 'kitchen' }, { url: 'https://a.example.com/2.jpg' }],
+		});
+	});
+
+	it('maps each field and leaves out the blank ones', () => {
+		expect(
+			buildPropertyBody({
+				...base,
+				fields: {
+					bedrooms: '0',
+					builtM2: 95,
+					description: '  ',
+					agentNotes: 'Llaves en Sol',
+					addressVisibility: 'street',
+					street: 'Calle Mayor',
+					features: [],
+					images: '',
+				},
+			}),
+		).toEqual({
+			type: 'flat',
+			listings: [{ operation: 'rent', price: 720.5, available: false }],
+			address: { street: 'Calle Mayor', visibility: 'street' },
+			bedrooms: 0,
+			built_m2: 95,
+			agent_notes: 'Llaves en Sol',
+		});
+	});
+
+	it('rejects rooms that are not whole numbers', () => {
+		expect(() => buildPropertyBody({ ...base, fields: { bathrooms: 1.5 } })).toThrow(/Bathrooms/);
+	});
+});
+
+describe('assertPropertyReference', () => {
+	it.each(['REF-1', 'a.b_c', 'x'.repeat(50)])('accepts %s', (reference) => {
+		expect(assertPropertyReference(` ${reference} `)).toBe(reference);
+	});
+
+	it.each(['', '.', '..', 'REF 1', 'REF/1', 'x'.repeat(51)])('rejects %j', (reference) => {
+		expect(() => assertPropertyReference(reference)).toThrow(/reference/);
 	});
 });

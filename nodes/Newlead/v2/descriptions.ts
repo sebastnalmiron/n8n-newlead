@@ -146,6 +146,34 @@ const LEAD_GET_MANY = { resource: ['lead'], operation: ['getMany'] };
 const LEAD_BY_AGENT = { resource: ['lead'], operation: ['get', 'getMany', 'update'] };
 const PROPERTY_GET_MANY = { resource: ['property'], operation: ['getMany'] };
 
+const PROPERTY_UPSERT = { resource: ['property'], operation: ['upsert'] };
+
+const PROPERTY_TYPE_OPTIONS = [
+	{ name: 'Building', value: 'building' },
+	{ name: 'Commercial', value: 'commercial' },
+	{ name: 'Country House', value: 'countryhouse' },
+	{ name: 'Flat', value: 'flat' },
+	{ name: 'Garage', value: 'garage' },
+	{ name: 'House', value: 'house' },
+	{ name: 'Land', value: 'land' },
+	{ name: 'Office', value: 'office' },
+	{ name: 'Room', value: 'room' },
+	{ name: 'Storage', value: 'storage' },
+];
+
+const PROPERTY_FEATURE_OPTIONS = [
+	{ name: 'Air Conditioning', value: 'air_conditioning' },
+	{ name: 'Balcony', value: 'balcony' },
+	{ name: 'Fitted Wardrobes', value: 'fitted_wardrobes' },
+	{ name: 'Garden', value: 'garden' },
+	{ name: 'Lift', value: 'lift' },
+	{ name: 'Parking', value: 'parking' },
+	{ name: 'Pets Allowed', value: 'pets_allowed' },
+	{ name: 'Pool', value: 'pool' },
+	{ name: 'Storage Room', value: 'storage_room' },
+	{ name: 'Terrace', value: 'terrace' },
+];
+
 const IDEMPOTENCY_KEY_OPTION: INodeProperties = {
 	displayName: 'Idempotency Key',
 	name: 'idempotencyKey',
@@ -660,15 +688,27 @@ const propertyProperties: INodeProperties[] = [
 		'property',
 		[
 			{
+				name: 'Create or Update',
+				value: 'upsert',
+				description: 'Create a new property, or update the current one if it already exists (upsert)',
+				action: 'Create or update a property',
+			},
+			{
+				name: 'Delete',
+				value: 'delete',
+				description: 'Delete a property created with Create or Update',
+				action: 'Delete a property',
+			},
+			{
 				name: 'Get by Reference',
 				value: 'getByReference',
-				description: 'Find a property by its Idealista listing code or internal reference',
+				description: 'Find a property by its Idealista listing code or your reference',
 				action: 'Get a property by reference',
 			},
 			{
 				name: 'Get Many',
 				value: 'getMany',
-				description: 'Get the properties published on Idealista, with their photos, newest first',
+				description: 'Get many published properties, with their photos, newest first',
 				action: 'Get many properties',
 			},
 		],
@@ -683,7 +723,7 @@ const propertyProperties: INodeProperties[] = [
 		default: '',
 		placeholder: '109876543, 6543 or REF-0001',
 		displayOptions: { show: { resource: ['property'], operation: ['getByReference'] } },
-		description: 'Idealista listing code (full or its last 3+ digits) or the internal reference',
+		description: 'Idealista listing code (full or its last 3+ digits) or your reference',
 	},
 	{
 		displayName: 'Simplify',
@@ -692,6 +732,157 @@ const propertyProperties: INodeProperties[] = [
 		default: true,
 		displayOptions: { show: { resource: ['property'], operation: ['getByReference'] } },
 		description: 'Whether to return flat fields ready for template variables instead of the full response',
+	},
+	{
+		displayName: 'Reference',
+		name: 'reference',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'REF-0001',
+		displayOptions: { show: { resource: ['property'], operation: ['upsert', 'delete'] } },
+		description:
+			'Your reference for the property: 1 to 50 letters, digits, dots, hyphens or underscores. Create or Update replaces the whole property that has it, so a field left empty is cleared.',
+	},
+	{
+		displayName: 'Type',
+		name: 'propertyType',
+		type: 'options',
+		options: PROPERTY_TYPE_OPTIONS,
+		required: true,
+		default: 'flat',
+		displayOptions: { show: PROPERTY_UPSERT },
+	},
+	{
+		displayName: 'Listings',
+		name: 'listings',
+		type: 'fixedCollection',
+		typeOptions: { multipleValues: true },
+		default: {},
+		placeholder: 'Add Listing',
+		displayOptions: { show: PROPERTY_UPSERT },
+		options: [
+			{
+				displayName: 'Listing',
+				name: 'listing',
+				values: [
+					{
+						displayName: 'Operation',
+						name: 'listingOperation',
+						type: 'options',
+						options: [
+							{ name: 'Rent', value: 'rent' },
+							{ name: 'Sale', value: 'sale' },
+						],
+						default: 'sale',
+					},
+					{
+						displayName: 'Price',
+						name: 'price',
+						type: 'number',
+						typeOptions: { minValue: 0, numberPrecision: 2 },
+						default: 0,
+						description:
+							'In euros; for rent, per month. A listing without a price (empty or 0) is skipped.',
+					},
+					{
+						displayName: 'Available',
+						name: 'available',
+						type: 'boolean',
+						default: true,
+						description: 'Whether the listing is published, so the agent can offer it',
+					},
+				],
+			},
+		],
+		description: 'Sale, rent or both, once each',
+	},
+	{
+		displayName: 'Property Fields',
+		name: 'propertyFields',
+		type: 'collection',
+		placeholder: 'Add Field',
+		default: {},
+		displayOptions: { show: PROPERTY_UPSERT },
+		options: [
+			{
+				displayName: 'Address Visibility',
+				name: 'addressVisibility',
+				type: 'options',
+				options: [
+					{ name: 'Full', value: 'full', description: 'Street and number' },
+					{ name: 'Hidden', value: 'hidden', description: 'No address, only the city' },
+					{ name: 'Street', value: 'street', description: 'Street without the number' },
+				],
+				default: 'full',
+				description: 'How much of the address the agent tells leads',
+			},
+			{
+				displayName: 'Agent Notes',
+				name: 'agentNotes',
+				type: 'string',
+				typeOptions: { rows: 3 },
+				default: '',
+				description: 'Internal notes for the agent',
+			},
+			{
+				displayName: 'Bathrooms',
+				name: 'bathrooms',
+				type: 'number',
+				typeOptions: { minValue: 0, numberPrecision: 0 },
+				default: 0,
+			},
+			{
+				displayName: 'Bedrooms',
+				name: 'bedrooms',
+				type: 'number',
+				typeOptions: { minValue: 0, numberPrecision: 0 },
+				default: 0,
+			},
+			{
+				displayName: 'Built Area',
+				name: 'builtM2',
+				type: 'number',
+				typeOptions: { minValue: 1, numberPrecision: 0 },
+				default: 1,
+				description: 'In square meters',
+			},
+			{ displayName: 'City', name: 'city', type: 'string', default: '' },
+			{
+				displayName: 'Description',
+				name: 'description',
+				type: 'string',
+				typeOptions: { rows: 4 },
+				default: '',
+				description: 'The listing text, in Spanish',
+			},
+			{
+				displayName: 'Features',
+				name: 'features',
+				type: 'multiOptions',
+				options: PROPERTY_FEATURE_OPTIONS,
+				default: [],
+				description: 'The highlights the agent mentions',
+			},
+			{
+				displayName: 'Image URLs',
+				name: 'images',
+				type: 'string',
+				typeOptions: { rows: 4 },
+				default: '',
+				description:
+					'Public JPG, PNG or GIF links in order, one per line, up to 50. An expression can also give a list of links, or of images with a label as in the API.',
+			},
+			{
+				displayName: 'Postal Code',
+				name: 'postalCode',
+				type: 'string',
+				default: '',
+				description: 'Spanish postal code, 5 digits. The province comes from it.',
+			},
+			{ displayName: 'Street', name: 'street', type: 'string', default: '' },
+			{ displayName: 'Street Number', name: 'streetNumber', type: 'string', default: '' },
+		],
 	},
 ];
 
@@ -706,7 +897,7 @@ export const nodeProperties: INodeProperties[] = [
 			{ name: 'Call', value: 'call', description: 'Start voice calls and read them' },
 			{ name: 'Lead', value: 'lead', description: 'Manage leads' },
 			{ name: 'Message', value: 'message', description: 'Send text messages' },
-			{ name: 'Property', value: 'property', description: 'Get properties imported from Idealista' },
+			{ name: 'Property', value: 'property', description: 'Get, create, update and delete properties' },
 			{ name: 'Template', value: 'template', description: 'Send WhatsApp templates' },
 		],
 		default: 'template',
