@@ -29,6 +29,7 @@ function setup(
 		getNode: () => node,
 		getExecutionId: () => 'exec-9',
 		getWorkflowDataProxy: () => ({ $runIndex: options.runIndex ?? 0 }),
+		getTimezone: () => 'Europe/Madrid',
 		getCredentials: async () => ({ baseUrl: 'https://api.newlead.ai' }),
 		continueOnFail: () => options.continueOnFail ?? false,
 		helpers: {
@@ -428,6 +429,26 @@ describe('Lead > Get Many and Property', () => {
 		const [result] = await run();
 		expect(sent(request).qs).toEqual({ text_agent_id: AGENT, status: 'closed', limit: '10' });
 		expect(result.map((item) => item.json.id)).toEqual(['a', 'b']);
+	});
+
+	it('getMany sends the date filters in UTC, read in the workflow time zone', async () => {
+		const { run, request } = setup(
+			{
+				resource: 'lead',
+				operation: 'getMany',
+				textAgentId: AGENT,
+				returnAll: false,
+				limit: 10,
+				filters: { lastActivityAfter: '2026-11-19T10:00:00', createdBefore: '' },
+			},
+			[{ data: [] }],
+		);
+		await run();
+		expect(sent(request).qs).toEqual({
+			text_agent_id: AGENT,
+			last_activity_after: '2026-11-19T09:00:00.000Z',
+			limit: '10',
+		});
 	});
 
 	it('getMany with return all follows the cursor', async () => {

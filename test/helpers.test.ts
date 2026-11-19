@@ -5,6 +5,7 @@ import {
 	apiErrorOf,
 	assertLeadId,
 	buildLeadVariables,
+	buildListQuery,
 	buildPauseBody,
 	buildTemplateComponents,
 	describeApiError,
@@ -12,6 +13,7 @@ import {
 	pickIdempotencyKey,
 	simplifyProperties,
 	splitTemplateValue,
+	toApiDateTime,
 	toE164,
 } from '../nodes/Newlead/v2/helpers';
 
@@ -434,5 +436,49 @@ describe('simplifyProperties', () => {
 			status: 'none',
 			candidates_count: 0,
 		});
+	});
+});
+
+describe('toApiDateTime', () => {
+	it.each([
+		['2026-11-19T10:00:00', '2026-11-19T09:00:00.000Z'],
+		['2026-07-01T10:00:00', '2026-07-01T08:00:00.000Z'],
+		['2026-11-19', '2026-11-18T23:00:00.000Z'],
+		['2026-11-19 10:00', '2026-11-19T09:00:00.000Z'],
+		['2026-11-19T10:00:00.250', '2026-11-19T09:00:00.250Z'],
+		['2026-11-19T10:00:00+01:00', '2026-11-19T09:00:00.000Z'],
+		['2026-11-19T09:00:00Z', '2026-11-19T09:00:00.000Z'],
+	])('reads %s in the workflow time zone (Europe/Madrid)', (input, expected) => {
+		expect(toApiDateTime(input, 'Europe/Madrid')).toBe(expected);
+	});
+
+	it('takes a Date as it is', () => {
+		expect(toApiDateTime(new Date('2026-11-19T09:00:00Z'), 'Europe/Madrid')).toBe(
+			'2026-11-19T09:00:00.000Z',
+		);
+	});
+
+	it.each(['', 'yesterday', '19/11/2026', '2026-13-01T00:00:00', '2026-02-30', '2026-11-19T25:00:00'])(
+		'rejects %j',
+		(input) => {
+			expect(() => toApiDateTime(input, 'Europe/Madrid')).toThrow(/not a date/);
+		},
+	);
+});
+
+describe('buildListQuery', () => {
+	it('maps the filters, leaves the empty ones out and sends the dates in UTC', () => {
+		expect(
+			buildListQuery(
+				{ status: 'closed', leadId: '  ', startedAfter: '2026-11-19T10:00:00' },
+				{
+					status: { parameter: 'status' },
+					leadId: { parameter: 'lead_id' },
+					startedAfter: { parameter: 'started_after', date: true },
+					startedBefore: { parameter: 'started_before', date: true },
+				},
+				'Europe/Madrid',
+			),
+		).toEqual({ status: 'closed', started_after: '2026-11-19T09:00:00.000Z' });
 	});
 });

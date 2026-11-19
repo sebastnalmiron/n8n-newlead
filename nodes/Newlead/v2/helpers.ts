@@ -144,6 +144,103 @@ export function buildPauseBody(options: IDataObject): IDataObject {
 	};
 }
 
+const LOCAL_DATE_TIME =
+	/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3})\d*)?)?)?$/;
+const ZONED_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/i;
+
+/** One formatter per zone for the whole process: building one costs more than using it. */
+const zoneFormats = new Map<string, Intl.DateTimeFormat>();
+
+function zoneFormat(timeZone: string): Intl.DateTimeFormat {
+	let format = zoneFormats.get(timeZone);
+	if (!format) {
+		format = new Intl.DateTimeFormat('en-US', {
+			timeZone,
+			hourCycle: 'h23',
+			year: 'numeric',
+			month: 'numeric',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: 'numeric',
+			second: 'numeric',
+		});
+		zoneFormats.set(timeZone, format);
+	}
+	return format;
+}
+
+/** Minutes the zone is ahead of UTC at an instant: 60 for Europe/Madrid in winter, 120 in summer. */
+function zoneOffsetMinutes(instant: number, timeZone: string): number {
+	const parts = zoneFormat(timeZone).formatToParts(new Date(instant));
+	const part = (type: Intl.DateTimeFormatPartTypes) =>
+		Number(parts.find((item) => item.type === type)?.value);
+	const wall = Date.UTC(
+		part('year'),
+		part('month') - 1,
+		part('day'),
+		part('hour'),
+		part('minute'),
+		part('second'),
+	);
+	return Math.round((wall - instant) / 60000);
+}
+
+/**
+ * A date filter for /v1, which only takes RFC 3339 with a zone. The n8n date picker gives the time
+ * without one: it is read in the workflow's time zone, the one the user sees.
+ */
+export function toApiDateTime(value: unknown, timeZone: string): string {
+	if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+	const raw = String(value ?? '').trim();
+	if (ZONED_DATE_TIME.test(raw) && !Number.isNaN(Date.parse(raw))) {
+		return new Date(raw).toISOString();
+	}
+	const match = LOCAL_DATE_TIME.exec(raw);
+	if (match) {
+		const [, year, month, day, hour = '0', minute = '0', second = '0', millis = '0'] = match;
+		const wall = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second, +millis.padEnd(3, '0'));
+		const check = new Date(wall);
+		// Date.UTC rolls 30 February over into March: a date that changes is not a date
+		if (
+			check.getUTCMonth() === +month - 1 &&
+			check.getUTCDate() === +day &&
+			+hour < 24 &&
+			+minute < 60 &&
+			+second < 60
+		) {
+			const guess = wall - zoneOffsetMinutes(wall, timeZone) * 60000;
+			return new Date(wall - zoneOffsetMinutes(guess, timeZone) * 60000).toISOString();
+		}
+	}
+	throw new Error(
+		`"${raw}" is not a date: pick one, or write it like 2026-11-19T10:00:00 or 2026-11-19T10:00:00+01:00`,
+	);
+}
+
+/** A filter of a Get Many: its /v1 query parameter, and whether it is a date. */
+export interface ListFilter {
+	parameter: string;
+	date?: boolean;
+}
+
+/**
+ * The filters of a Get Many as /v1 query parameters. `filterMap` maps each filter of the node to its
+ * parameter. Empty values are left out; the dates go in RFC 3339.
+ */
+export function buildListQuery(
+	filters: IDataObject,
+	filterMap: Record<string, ListFilter>,
+	timeZone: string,
+): IDataObject {
+	const query: IDataObject = {};
+	for (const [filter, { parameter, date }] of Object.entries(filterMap)) {
+		const value = filters[filter];
+		if (value === undefined || value === null || String(value).trim() === '') continue;
+		query[parameter] = date ? toApiDateTime(value, timeZone) : String(value).trim();
+	}
+	return query;
+}
+
 const LEAD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A lead id outside the phone mode. An empty one would turn GET /v1/leads/{id} into the lead list. */

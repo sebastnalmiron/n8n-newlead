@@ -430,6 +430,35 @@ const leadProperties: INodeProperties[] = [
 		displayOptions: { show: LEAD_GET_MANY },
 		options: [
 			{
+				displayName: 'Created After',
+				name: 'createdAfter',
+				type: 'dateTime',
+				default: '',
+				description: 'Leads created at or after this time',
+			},
+			{
+				displayName: 'Created Before',
+				name: 'createdBefore',
+				type: 'dateTime',
+				default: '',
+				description: 'Leads created before this time',
+			},
+			{
+				displayName: 'Last Activity After',
+				name: 'lastActivityAfter',
+				type: 'dateTime',
+				default: '',
+				description:
+					'Leads with a message or a call at or after this time. Use it to poll for changes.',
+			},
+			{
+				displayName: 'Last Activity Before',
+				name: 'lastActivityBefore',
+				type: 'dateTime',
+				default: '',
+				description: 'Leads whose last message or call is before this time',
+			},
+			{
 				displayName: 'Status',
 				name: 'status',
 				type: 'options',

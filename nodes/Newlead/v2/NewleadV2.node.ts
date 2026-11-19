@@ -16,6 +16,7 @@ import { nodeProperties } from './descriptions';
 import {
 	assertLeadId,
 	buildLeadVariables,
+	buildListQuery,
 	buildPauseBody,
 	buildTemplateComponents,
 	errorDetails,
@@ -25,6 +26,7 @@ import {
 	simplifyProperties,
 	splitTemplateValue,
 	toE164,
+	type ListFilter,
 	type TemplateHeaderType,
 } from './helpers';
 import { v1Request, v1RequestAll } from './transport';
@@ -32,6 +34,15 @@ import { v1Request, v1RequestAll } from './transport';
 const LEAD_PICKER_LIMIT = '100';
 /** The channels the old routes looked at when searching by phone (WHATSAPP_LEAD_CHANNELS in the API). */
 const PHONE_LOOKUP_CHANNELS = ['whatsapp', 'meta_ads'];
+
+/** Lead > Get Many: each filter of the node and its query parameter in /v1. */
+const LEAD_FILTERS: Record<string, ListFilter> = {
+	status: { parameter: 'status' },
+	createdAfter: { parameter: 'created_after', date: true },
+	createdBefore: { parameter: 'created_before', date: true },
+	lastActivityAfter: { parameter: 'last_activity_after', date: true },
+	lastActivityBefore: { parameter: 'last_activity_before', date: true },
+};
 
 function leadLabel(lead: IDataObject): string {
 	const contact = (lead.phone as string) || (lead.username ? `@${lead.username as string}` : '');
@@ -203,7 +214,10 @@ async function runLead(
 	const scope = leadScope(context, itemIndex, true);
 	if (operation === 'getMany') {
 		const filters = context.getNodeParameter('filters', itemIndex, {}) as IDataObject;
-		return await getMany(context, itemIndex, '/leads', { ...scope, ...filters });
+		return await getMany(context, itemIndex, '/leads', {
+			...scope,
+			...buildListQuery(filters, LEAD_FILTERS, context.getTimezone()),
+		});
 	}
 	const leadId = await resolveLeadId(context, itemIndex, scope);
 	if (operation === 'update') {
