@@ -44,7 +44,7 @@ export class NewleadApi implements ICredentialType {
 	test: ICredentialTestRequest = {
 		request: {
 			baseURL: '={{$credentials.baseUrl}}',
-			url: '/v1/text_agents',
+			url: '/v1/me',
 			method: 'GET',
 			headers: {
 				'x-api-key': '={{$credentials.apiKey}}',
