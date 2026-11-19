@@ -19,6 +19,16 @@ function setup(
 ) {
 	let call = 0;
 	const request = vi.fn(async () => responses[Math.min(call++, responses.length - 1)]);
+	// The download of a recording: a plain request to the signed link, and n8n's binary helper
+	const download = vi.fn(async () => ({
+		body: Buffer.from('audio'),
+		headers: { 'content-type': 'audio/ogg' },
+	}));
+	const prepareBinaryData = vi.fn(async (_data: Buffer, fileName?: string, mimeType?: string) => ({
+		data: 'YXVkaW8=',
+		fileName,
+		mimeType,
+	}));
 	const context = {
 		getInputData: () => Array.from({ length: options.items ?? 1 }, () => ({ json: {} })),
 		// Like n8n: a parameter that does not exist and has no default throws
@@ -35,6 +45,8 @@ function setup(
 		continueOnFail: () => options.continueOnFail ?? false,
 		helpers: {
 			httpRequestWithAuthentication: request,
+			httpRequest: download,
+			prepareBinaryData,
 			returnJsonArray: (data: IDataObject | IDataObject[]) =>
 				(Array.isArray(data) ? data : [data]).map((json) => ({ json })),
 			constructExecutionMetaData: (data: object[], meta: { itemData: unknown }) =>
@@ -42,7 +54,7 @@ function setup(
 		},
 	} as never;
 	const run = () => new NewleadV2({} as never).execute.call(context);
-	return { run, request };
+	return { run, request, download, prepareBinaryData };
 }
 
 const sent = (request: ReturnType<typeof setup>['request'], index = 0) =>
@@ -616,6 +628,64 @@ describe('Call', () => {
 			limit: '5',
 		});
 		expect(result.map((item) => item.json.id)).toEqual(['c1', 'c2']);
+	});
+});
+
+describe('Call > Get Recording', () => {
+	const params = { resource: 'call', operation: 'getRecording', callId: CALL, binaryPropertyName: 'audio' };
+	const link =
+		'https://newleadvoicerec.blob.core.windows.net/voice-recordings/rooms/abc.ogg?sv=2024&sig=x';
+
+	it('asks for the link without following it and downloads the audio without the key', async () => {
+		const { run, request, download, prepareBinaryData } = setup(params, [
+			{ statusCode: 302, headers: { location: link }, body: '' },
+		]);
+		const [result] = await run();
+		expect(sent(request)).toMatchObject({
+			method: 'GET',
+			url: `https://api.newlead.ai/v1/calls/${CALL}/recording`,
+			disableFollowRedirect: true,
+			ignoreHttpStatusErrors: true,
+			returnFullResponse: true,
+		});
+		expect(download).toHaveBeenCalledWith({
+			method: 'GET',
+			url: link,
+			encoding: 'arraybuffer',
+			returnFullResponse: true,
+		});
+		expect(prepareBinaryData).toHaveBeenCalledWith(Buffer.from('audio'), `call-${CALL}.ogg`, 'audio/ogg');
+		expect(result[0].json).toEqual({ call_id: CALL });
+		expect(result[0].binary).toEqual({
+			audio: { data: 'YXVkaW8=', fileName: `call-${CALL}.ogg`, mimeType: 'audio/ogg' },
+		});
+		expect(result[0].pairedItem).toEqual({ item: 0 });
+	});
+
+	it('gives the API error when the call has no recording, and downloads nothing', async () => {
+		const { run, download } = setup(params, [
+			{
+				statusCode: 404,
+				headers: {},
+				body: {
+					error: {
+						code: 'resource_not_found',
+						message: 'This call has no recording.',
+						param: 'call_id',
+						request_id: 'req_3',
+					},
+				},
+			},
+		]);
+		await expect(run()).rejects.toThrow('resource_not_found: This call has no recording.');
+		expect(download).not.toHaveBeenCalled();
+	});
+
+	it('rejects an invalid call id before any request', async () => {
+		const { run, request, download } = setup({ ...params, callId: '' });
+		await expect(run()).rejects.toThrow(/call ID/);
+		expect(request).not.toHaveBeenCalled();
+		expect(download).not.toHaveBeenCalled();
 	});
 });
 

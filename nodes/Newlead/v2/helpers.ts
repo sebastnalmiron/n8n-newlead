@@ -432,3 +432,20 @@ export function simplifyProperties(
 		candidates_count: properties.length > 1 ? properties.length : 0,
 	};
 }
+
+/**
+ * The file of a call recording: `call-<id>` with the extension of the stored audio, and its type
+ * when the storage gives an audio or video one (otherwise n8n works it out from the extension).
+ */
+export function recordingFile(
+	link: string,
+	callId: string,
+	contentType: unknown,
+): { fileName: string; mimeType?: string } {
+	const extension = /\.([a-z0-9]{2,5})$/i.exec(link.split('?')[0])?.[1]?.toLowerCase();
+	const type = String(contentType ?? '').split(';')[0].trim().toLowerCase();
+	return {
+		fileName: extension ? `call-${callId}.${extension}` : `call-${callId}`,
+		...(/^(audio|video)\//.test(type) ? { mimeType: type } : {}),
+	};
+}

@@ -503,7 +503,8 @@ const aiControlProperties: INodeProperties[] = [
 ];
 
 const CALL_START = { resource: ['call'], operation: ['start'] };
-const CALL_BY_ID = { resource: ['call'], operation: ['get'] };
+const CALL_BY_ID = { resource: ['call'], operation: ['get', 'getRecording'] };
+const CALL_RECORDING = { resource: ['call'], operation: ['getRecording'] };
 const CALL_GET_MANY = { resource: ['call'], operation: ['getMany'] };
 
 const CALL_STATUS_OPTIONS = [
@@ -525,6 +526,12 @@ const callProperties: INodeProperties[] = [
 				value: 'getMany',
 				description: 'Get many calls, newest first',
 				action: 'Get many calls',
+			},
+			{
+				name: 'Get Recording',
+				value: 'getRecording',
+				description: 'Download the audio of a call',
+				action: 'Get the recording of a call',
 			},
 			{
 				name: 'Start',
@@ -577,6 +584,15 @@ const callProperties: INodeProperties[] = [
 		default: '',
 		placeholder: '00000000-0000-4000-8000-000000000001',
 		displayOptions: { show: CALL_BY_ID },
+	},
+	{
+		displayName: 'Put Output File in Field',
+		name: 'binaryPropertyName',
+		type: 'string',
+		required: true,
+		default: 'data',
+		displayOptions: { show: CALL_RECORDING },
+		hint: 'The name of the output binary field to put the file in',
 	},
 	...getManyFields(CALL_GET_MANY),
 	{

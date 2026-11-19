@@ -23,13 +23,14 @@ import {
 	isTooManyMatches,
 	idempotencyKeyFor,
 	pickIdempotencyKey,
+	recordingFile,
 	simplifyProperties,
 	splitTemplateValue,
 	toE164,
 	type ListFilter,
 	type TemplateHeaderType,
 } from './helpers';
-import { v1Request, v1RequestAll } from './transport';
+import { v1RedirectLocation, v1Request, v1RequestAll } from './transport';
 
 const LEAD_PICKER_LIMIT = '100';
 /** The channels the old routes looked at when searching by phone (WHATSAPP_LEAD_CHANNELS in the API). */
@@ -331,6 +332,32 @@ async function runCall(
 	return await v1Request.call(context, 'GET', `/calls/${callId}`);
 }
 
+/** Call > Get Recording: the audio as binary data, downloaded from the signed link without the API key. */
+async function downloadRecording(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const callId = assertId(context.getNodeParameter('callId', itemIndex), 'call ID');
+	const link = await v1RedirectLocation.call(context, `/calls/${callId}/recording`);
+	// The signed link is its own permission: a plain request, so the key never reaches the storage
+	const response = (await context.helpers.httpRequest({
+		method: 'GET',
+		url: link,
+		encoding: 'arraybuffer',
+		returnFullResponse: true,
+	})) as { body: Buffer; headers: IDataObject };
+	const { fileName, mimeType } = recordingFile(link, callId, response.headers['content-type']);
+	const field = context.getNodeParameter('binaryPropertyName', itemIndex, 'data') as string;
+	// httpRequest with arraybuffer already gives a Buffer: copying it would double the memory
+	const audio = Buffer.isBuffer(response.body) ? response.body : Buffer.from(response.body);
+	return {
+		json: { call_id: callId },
+		binary: {
+			[field]: await context.helpers.prepareBinaryData(audio, fileName, mimeType),
+		},
+	};
+}
+
 async function runItem(
 	context: IExecuteFunctions,
 	resource: string,
@@ -436,9 +463,13 @@ export class NewleadV2 implements INodeType {
 
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			try {
-				const response = await runItem(this, resource, operation, itemIndex);
+				// Get Recording gives a file; every other operation gives JSON
+				const executionData =
+					resource === 'call' && operation === 'getRecording'
+						? [await downloadRecording(this, itemIndex)]
+						: this.helpers.returnJsonArray(await runItem(this, resource, operation, itemIndex));
 				returnData.push(
-					...this.helpers.constructExecutionMetaData(this.helpers.returnJsonArray(response), {
+					...this.helpers.constructExecutionMetaData(executionData, {
 						itemData: { item: itemIndex },
 					}),
 				);

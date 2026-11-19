@@ -11,6 +11,7 @@ import {
 	describeApiError,
 	idempotencyKeyFor,
 	pickIdempotencyKey,
+	recordingFile,
 	simplifyProperties,
 	splitTemplateValue,
 	toApiDateTime,
@@ -484,5 +485,23 @@ describe('buildListQuery', () => {
 				'Europe/Madrid',
 			),
 		).toEqual({ status: 'closed', started_after: '2026-11-19T09:00:00.000Z' });
+	});
+});
+
+describe('recordingFile', () => {
+	it('names the file after the call, with the extension of the stored audio', () => {
+		expect(
+			recordingFile(
+				'https://rec.blob.core.windows.net/voice-recordings/room/egress.ogg?sv=1&sig=a.b',
+				'c1',
+				'audio/ogg',
+			),
+		).toEqual({ fileName: 'call-c1.ogg', mimeType: 'audio/ogg' });
+	});
+
+	it('leaves a generic type to n8n and works without an extension', () => {
+		expect(recordingFile('https://rec.example.com/egress?sig=1', 'c1', 'application/octet-stream')).toEqual({
+			fileName: 'call-c1',
+		});
 	});
 });

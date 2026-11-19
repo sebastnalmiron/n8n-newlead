@@ -20,6 +20,31 @@ export interface V1RequestOptions {
 
 type RequestContext = IExecuteFunctions | ILoadOptionsFunctions;
 
+interface FullResponse {
+	statusCode: number;
+	headers: IDataObject;
+	body: unknown;
+}
+
+function v1Url(baseUrl: string, path: string): string {
+	return `${baseUrl.replace(/\/+$/, '')}/v1${path}`;
+}
+
+/** The NodeApiError of a failed request, with the API's code, message and request id when the body has them. */
+function toNodeApiError(context: RequestContext, error: unknown): NodeApiError {
+	// httpRequestWithAuthentication already throws a NodeApiError, and the constructor ignores its
+	// options for one: the texts are set on the instance.
+	const apiError =
+		error instanceof NodeApiError ? error : new NodeApiError(context.getNode(), error as JsonObject);
+	const detail = apiErrorOf(error);
+	if (detail) {
+		const { message, description } = describeApiError(detail);
+		apiError.message = message;
+		apiError.description = description;
+	}
+	return apiError;
+}
+
 /** A request to /v1. Errors keep the API's code, message and request id. */
 export async function v1Request(
 	this: RequestContext,
@@ -30,7 +55,7 @@ export async function v1Request(
 	const credentials = await this.getCredentials('newleadApi');
 	const request: IHttpRequestOptions = {
 		method,
-		url: `${(credentials.baseUrl as string).replace(/\/+$/, '')}/v1${path}`,
+		url: v1Url(credentials.baseUrl as string, path),
 		json: true,
 		...(options.body && Object.keys(options.body).length > 0 ? { body: options.body } : {}),
 		...(options.query && Object.keys(options.query).length > 0 ? { qs: options.query } : {}),
@@ -43,17 +68,7 @@ export async function v1Request(
 			request,
 		)) as IDataObject;
 	} catch (error) {
-		// httpRequestWithAuthentication already throws a NodeApiError, and the constructor ignores its
-		// options for one: the texts are set on the instance.
-		const apiError =
-			error instanceof NodeApiError ? error : new NodeApiError(this.getNode(), error as JsonObject);
-		const detail = apiErrorOf(error);
-		if (detail) {
-			const { message, description } = describeApiError(detail);
-			apiError.message = message;
-			apiError.description = description;
-		}
-		throw apiError;
+		throw toNodeApiError(this, error);
 	}
 }
 
@@ -89,4 +104,38 @@ export async function v1RequestAll(
 		}
 	} while (cursor);
 	return items;
+}
+
+/**
+ * The Location of a /v1 route that answers with a redirect (the recording of a call), without
+ * following it: on a redirect to another host n8n would send the x-api-key header there too.
+ */
+export async function v1RedirectLocation(this: IExecuteFunctions, path: string): Promise<string> {
+	const credentials = await this.getCredentials('newleadApi');
+	let response: FullResponse;
+	try {
+		response = (await this.helpers.httpRequestWithAuthentication.call(this, 'newleadApi', {
+			method: 'GET',
+			url: v1Url(credentials.baseUrl as string, path),
+			json: true,
+			disableFollowRedirect: true,
+			ignoreHttpStatusErrors: true,
+			returnFullResponse: true,
+		})) as FullResponse;
+	} catch (error) {
+		throw toNodeApiError(this, error);
+	}
+	const location = response.headers?.location;
+	if (response.statusCode >= 300 && response.statusCode < 400 && typeof location === 'string' && location) {
+		return location;
+	}
+	// With ignoreHttpStatusErrors an API error arrives as a response: it becomes the error any other request gives
+	throw toNodeApiError(this, {
+		message:
+			response.statusCode < 400
+				? 'The API answered without the link to the recording'
+				: `Request failed with status code ${response.statusCode}`,
+		httpCode: String(response.statusCode),
+		response: { data: response.body },
+	});
 }

@@ -1,7 +1,7 @@
 import { NodeApiError, NodeOperationError, type IDataObject, type INode } from 'n8n-workflow';
 import { describe, expect, it, vi } from 'vitest';
 
-import { v1Request, v1RequestAll } from '../nodes/Newlead/v2/transport';
+import { v1RedirectLocation, v1Request, v1RequestAll } from '../nodes/Newlead/v2/transport';
 
 const node = { name: 'Newlead', type: 'n8n-nodes-newlead.newlead', typeVersion: 2 } as INode;
 
@@ -124,5 +124,53 @@ describe('v1RequestAll', () => {
 		expect(error).toBeInstanceOf(NodeOperationError);
 		expect((error as Error).message).toContain('/leads');
 		expect(request).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('v1RedirectLocation', () => {
+	it('asks without following the redirect and returns the Location', async () => {
+		const { context, request } = setup(async () => ({
+			statusCode: 302,
+			headers: { location: 'https://store.example.com/x.ogg?sig=1' },
+			body: '',
+		}));
+		const link = await v1RedirectLocation.call(context, '/calls/c1/recording');
+		expect(link).toBe('https://store.example.com/x.ogg?sig=1');
+		expect(request.mock.calls[0][1]).toEqual({
+			method: 'GET',
+			url: 'https://api.newlead.ai/v1/calls/c1/recording',
+			json: true,
+			disableFollowRedirect: true,
+			ignoreHttpStatusErrors: true,
+			returnFullResponse: true,
+		});
+	});
+
+	it('turns an API error that arrives as a response into its NodeApiError', async () => {
+		const { context } = setup(async () => ({
+			statusCode: 404,
+			headers: {},
+			body: {
+				error: {
+					code: 'resource_not_found',
+					message: 'This call has no recording.',
+					param: 'call_id',
+					request_id: 'req_4',
+				},
+			},
+		}));
+		const error = await v1RedirectLocation.call(context, '/calls/c1/recording').catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(NodeApiError);
+		expect(error).toMatchObject({
+			message: 'resource_not_found: This call has no recording.',
+			description: expect.stringContaining('Request ID: req_4.'),
+		});
+	});
+
+	it('fails when the API answers without a link', async () => {
+		const { context } = setup(async () => ({ statusCode: 200, headers: {}, body: {} }));
+		await expect(v1RedirectLocation.call(context, '/calls/c1/recording')).rejects.toBeInstanceOf(
+			NodeApiError,
+		);
 	});
 });
