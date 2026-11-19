@@ -7,6 +7,7 @@ import { NewleadV2 } from '../nodes/Newlead/v2/NewleadV2.node';
 const node = { id: 'node-1', name: 'Newlead', type: 'n8n-nodes-newlead.newlead', typeVersion: 2 } as INode;
 const AGENT = '11111111-1111-4111-8111-111111111111';
 const LEAD = '22222222-2222-4222-8222-222222222222';
+const VOICE = '55555555-5555-4555-8555-555555555555';
 
 type Params = Record<string, unknown>;
 
@@ -296,6 +297,63 @@ describe('Lead', () => {
 	});
 });
 
+describe('Lead: Agent Type Voice', () => {
+	const voice = { resource: 'lead', agentType: 'voice', voiceAgentId: VOICE, textAgentId: AGENT };
+
+	it('getMany lists the leads of the voice agent, without text_agent_id', async () => {
+		const { run, request } = setup(
+			{ ...voice, operation: 'getMany', returnAll: false, limit: 10 },
+			[{ data: [{ id: 'a' }] }],
+		);
+		await run();
+		expect(sent(request).qs).toEqual({ voice_agent_id: VOICE, limit: '10' });
+	});
+
+	it('get by phone searches the voice agent and keeps its call leads', async () => {
+		const { run, request } = setup(
+			{ ...voice, operation: 'get', leadId: { mode: 'phone', value: '+34600111222' } },
+			[{ data: [{ id: LEAD, channel: 'voice' }] }, { id: LEAD }],
+		);
+		await run();
+		expect(sent(request, 0).qs).toEqual({ phone: '+34600111222', voice_agent_id: VOICE, limit: '100' });
+		expect(sent(request, 1).url).toBe(`https://api.newlead.ai/v1/leads/${LEAD}`);
+	});
+
+	it('in a text agent the phone lookup still skips call leads', async () => {
+		const { run, request } = setup(
+			{
+				resource: 'lead',
+				operation: 'get',
+				textAgentId: AGENT,
+				leadId: { mode: 'phone', value: '+34600111222' },
+			},
+			[{ data: [{ id: LEAD, channel: 'voice' }] }],
+		);
+		await expect(run()).rejects.toThrow('No lead with phone');
+		expect(request).toHaveBeenCalledTimes(1);
+	});
+
+	it('create stays on the text agent whatever Agent Type says', async () => {
+		const { run, request } = setup({ ...voice, operation: 'create', phoneNumber: '+34600111222' });
+		await run();
+		expect((sent(request).body as IDataObject).text_agent_id).toBe(AGENT);
+	});
+
+	it('AI Control ignores Agent Type and looks the phone up in the text agent', async () => {
+		const { run, request } = setup(
+			{
+				...voice,
+				resource: 'aiControl',
+				operation: 'resume',
+				leadId: { mode: 'phone', value: '+34600111222' },
+			},
+			[{ data: [{ id: LEAD, channel: 'whatsapp' }] }, {}],
+		);
+		await run();
+		expect(sent(request, 0).qs).toEqual({ phone: '+34600111222', text_agent_id: AGENT, limit: '100' });
+	});
+});
+
 describe('AI Control', () => {
 	it('pause is a POST without key', async () => {
 		const { run, request } = setup({
@@ -575,5 +633,41 @@ describe('Dropdowns follow pagination', () => {
 		);
 		const options = await loadOptions.getTemplates.call(context);
 		expect(options.map((option) => option.value)).toEqual(['welcome|es']);
+	});
+
+	it('getStandaloneVoiceAgents leaves out the voice agents with a text agent', async () => {
+		const { context } = loadContext([
+			{
+				data: [
+					{ id: 'v1', name: 'Solo', text_agent_id: null },
+					{ id: 'v2', name: 'Linked', text_agent_id: AGENT },
+				],
+				has_more: true,
+				next_cursor: 'c1',
+			},
+			{ data: [{ id: 'v3', name: 'Solo 2', text_agent_id: null }], has_more: false, next_cursor: null },
+		]);
+		const options = await loadOptions.getStandaloneVoiceAgents.call(context);
+		expect(options).toEqual([
+			{ name: 'Solo', value: 'v1' },
+			{ name: 'Solo 2', value: 'v3' },
+		]);
+	});
+
+	it('searchLeads uses the voice agent in Lead with Agent Type Voice, and the text agent elsewhere', async () => {
+		const searchLeads = new NewleadV2({} as never).methods.listSearch.searchLeads;
+		const current = { agentType: 'voice', voiceAgentId: VOICE, textAgentId: AGENT };
+		const lead = loadContext([{ data: [{ id: LEAD, name: 'Ana' }] }], { ...current, resource: 'lead' });
+		await searchLeads.call(lead.context);
+		expect((lead.request.mock.calls[0][1] as unknown as IDataObject).qs).toEqual({
+			voice_agent_id: VOICE,
+			limit: '100',
+		});
+		const message = loadContext([{ data: [] }], { ...current, resource: 'message' });
+		await searchLeads.call(message.context);
+		expect((message.request.mock.calls[0][1] as unknown as IDataObject).qs).toEqual({
+			text_agent_id: AGENT,
+			limit: '100',
+		});
 	});
 });

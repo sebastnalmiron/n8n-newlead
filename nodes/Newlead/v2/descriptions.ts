@@ -30,6 +30,23 @@ function textAgentField(show: Record<string, string[]>, required = true): INodeP
 	};
 }
 
+function voiceAgentField(
+	show: Record<string, string[]>,
+	loadOptionsMethod: string,
+	description: string,
+): INodeProperties {
+	return {
+		displayName: 'Voice Agent Name or ID',
+		name: 'voiceAgentId',
+		type: 'options',
+		typeOptions: { loadOptionsMethod },
+		required: true,
+		default: '',
+		displayOptions: { show },
+		description,
+	};
+}
+
 /** Return All and Limit for a Get Many operation. */
 function getManyFields(show: Record<string, string[]>): INodeProperties[] {
 	return [
@@ -126,6 +143,7 @@ const MESSAGE_SEND = { resource: ['message'], operation: ['send'] };
 const LEAD_CREATE = { resource: ['lead'], operation: ['create'] };
 const LEAD_UPDATE = { resource: ['lead'], operation: ['update'] };
 const LEAD_GET_MANY = { resource: ['lead'], operation: ['getMany'] };
+const LEAD_BY_AGENT = { resource: ['lead'], operation: ['get', 'getMany', 'update'] };
 const PROPERTY_GET_MANY = { resource: ['property'], operation: ['getMany'] };
 
 const IDEMPOTENCY_KEY_OPTION: INodeProperties = {
@@ -345,7 +363,27 @@ const leadProperties: INodeProperties[] = [
 		],
 		'get',
 	),
-	textAgentField({ resource: ['lead'] }),
+	{
+		displayName: 'Agent Type',
+		name: 'agentType',
+		type: 'options',
+		noDataExpression: true,
+		options: [
+			{ name: 'Text', value: 'text', description: 'A text agent: WhatsApp, Instagram, web chat' },
+			{ name: 'Voice', value: 'voice', description: 'A voice agent without a text agent' },
+		],
+		default: 'text',
+		displayOptions: { show: LEAD_BY_AGENT },
+		description:
+			"Whose leads to use. A voice agent with a text agent shares that agent's leads: choose Text.",
+	},
+	textAgentField(LEAD_CREATE),
+	textAgentField({ ...LEAD_BY_AGENT, agentType: ['text'] }),
+	voiceAgentField(
+		{ ...LEAD_BY_AGENT, agentType: ['voice'] },
+		'getStandaloneVoiceAgents',
+		'The voice agent, among those without a text agent. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+	),
 	leadField({ resource: ['lead'], operation: ['get', 'update'] }),
 	{
 		displayName: 'Phone Number',
