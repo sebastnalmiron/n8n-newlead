@@ -395,6 +395,28 @@ describe('Lead > Get Many and Property', () => {
 		expect(sent(request).qs).toEqual({ reference: '109876543' });
 		expect(result[0].json).toMatchObject({ found: false, status: 'none' });
 	});
+
+	it('property getMany lists the published properties up to the limit', async () => {
+		const { run, request } = setup(
+			{ resource: 'property', operation: 'getMany', returnAll: false, limit: 5 },
+			[{ data: [{ id: 'p1' }, { id: 'p2' }], has_more: true, next_cursor: 'c1' }],
+		);
+		const [result] = await run();
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(sent(request).qs).toEqual({ limit: '5' });
+		expect(result.map((item) => item.json.id)).toEqual(['p1', 'p2']);
+	});
+
+	it('property getMany with return all follows the cursor', async () => {
+		const { run, request } = setup({ resource: 'property', operation: 'getMany', returnAll: true }, [
+			{ data: [{ id: 'p1' }], has_more: true, next_cursor: 'c1' },
+			{ data: [{ id: 'p2' }], has_more: false, next_cursor: null },
+		]);
+		const [result] = await run();
+		expect(request).toHaveBeenCalledTimes(2);
+		expect((sent(request, 1).qs as IDataObject).cursor).toBe('c1');
+		expect(result.map((item) => item.json.id)).toEqual(['p1', 'p2']);
+	});
 });
 
 describe('Property > Get by Reference: more than 3 matches', () => {

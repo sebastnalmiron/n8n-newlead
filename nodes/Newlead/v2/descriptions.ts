@@ -30,6 +30,29 @@ function textAgentField(show: Record<string, string[]>, required = true): INodeP
 	};
 }
 
+/** Return All and Limit for a Get Many operation. */
+function getManyFields(show: Record<string, string[]>): INodeProperties[] {
+	return [
+		{
+			displayName: 'Return All',
+			name: 'returnAll',
+			type: 'boolean',
+			default: false,
+			displayOptions: { show },
+			description: 'Whether to return all results or only up to a given limit',
+		},
+		{
+			displayName: 'Limit',
+			name: 'limit',
+			type: 'number',
+			typeOptions: { minValue: 1, maxValue: 100, numberPrecision: 0 },
+			default: 50,
+			displayOptions: { show: { ...show, returnAll: [false] } },
+			description: 'Max number of results to return',
+		},
+	];
+}
+
 function leadField(show: Record<string, string[]>): INodeProperties {
 	return {
 		displayName: 'Lead',
@@ -103,6 +126,7 @@ const MESSAGE_SEND = { resource: ['message'], operation: ['send'] };
 const LEAD_CREATE = { resource: ['lead'], operation: ['create'] };
 const LEAD_UPDATE = { resource: ['lead'], operation: ['update'] };
 const LEAD_GET_MANY = { resource: ['lead'], operation: ['getMany'] };
+const PROPERTY_GET_MANY = { resource: ['property'], operation: ['getMany'] };
 
 const IDEMPOTENCY_KEY_OPTION: INodeProperties = {
 	displayName: 'Idempotency Key',
@@ -358,23 +382,7 @@ const leadProperties: INodeProperties[] = [
 		],
 	},
 	variablesField({ resource: ['lead'], operation: ['create', 'update'] }),
-	{
-		displayName: 'Return All',
-		name: 'returnAll',
-		type: 'boolean',
-		default: false,
-		displayOptions: { show: LEAD_GET_MANY },
-		description: 'Whether to return all results or only up to a given limit',
-	},
-	{
-		displayName: 'Limit',
-		name: 'limit',
-		type: 'number',
-		typeOptions: { minValue: 1, maxValue: 100, numberPrecision: 0 },
-		default: 50,
-		displayOptions: { show: { ...LEAD_GET_MANY, returnAll: [false] } },
-		description: 'Max number of results to return',
-	},
+	...getManyFields(LEAD_GET_MANY),
 	{
 		displayName: 'Filters',
 		name: 'filters',
@@ -437,9 +445,16 @@ const propertyProperties: INodeProperties[] = [
 				description: 'Find a property by its Idealista listing code or internal reference',
 				action: 'Get a property by reference',
 			},
+			{
+				name: 'Get Many',
+				value: 'getMany',
+				description: 'Get the properties published on Idealista, with their photos, newest first',
+				action: 'Get many properties',
+			},
 		],
 		'getByReference',
 	),
+	...getManyFields(PROPERTY_GET_MANY),
 	{
 		displayName: 'Reference',
 		name: 'reference',
@@ -470,7 +485,7 @@ export const nodeProperties: INodeProperties[] = [
 			{ name: 'AI Control', value: 'aiControl', description: 'Pause or resume the AI for a lead' },
 			{ name: 'Lead', value: 'lead', description: 'Manage leads' },
 			{ name: 'Message', value: 'message', description: 'Send text messages' },
-			{ name: 'Property', value: 'property', description: 'Look up properties imported from Idealista' },
+			{ name: 'Property', value: 'property', description: 'Get properties imported from Idealista' },
 			{ name: 'Template', value: 'template', description: 'Send WhatsApp templates' },
 		],
 		default: 'template',

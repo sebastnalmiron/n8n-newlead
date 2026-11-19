@@ -150,6 +150,23 @@ async function sendMessage(context: IExecuteFunctions, itemIndex: number): Promi
 	});
 }
 
+/** A Get Many operation: every page with Return All, otherwise one page up to Limit. */
+async function getMany(
+	context: IExecuteFunctions,
+	itemIndex: number,
+	path: string,
+	query: IDataObject = {},
+): Promise<IDataObject[]> {
+	if (context.getNodeParameter('returnAll', itemIndex, false) as boolean) {
+		return await v1RequestAll.call(context, path, query);
+	}
+	const limit = context.getNodeParameter('limit', itemIndex, 50) as number;
+	const page = await v1Request.call(context, 'GET', path, {
+		query: { ...query, limit: String(limit) },
+	});
+	return page.data as IDataObject[];
+}
+
 async function runLead(
 	context: IExecuteFunctions,
 	operation: string,
@@ -169,19 +186,9 @@ async function runLead(
 		});
 	}
 	if (operation === 'getMany') {
+		const textAgentId = context.getNodeParameter('textAgentId', itemIndex) as string;
 		const filters = context.getNodeParameter('filters', itemIndex, {}) as IDataObject;
-		const query = {
-			text_agent_id: context.getNodeParameter('textAgentId', itemIndex) as string,
-			...filters,
-		};
-		if (context.getNodeParameter('returnAll', itemIndex, false) as boolean) {
-			return await v1RequestAll.call(context, '/leads', query);
-		}
-		const limit = context.getNodeParameter('limit', itemIndex, 50) as number;
-		const page = await v1Request.call(context, 'GET', '/leads', {
-			query: { ...query, limit: String(limit) },
-		});
-		return page.data as IDataObject[];
+		return await getMany(context, itemIndex, '/leads', { text_agent_id: textAgentId, ...filters });
 	}
 	const leadId = await resolveLeadId(context, itemIndex);
 	if (operation === 'update') {
@@ -223,7 +230,14 @@ async function runAiControl(
 	return { lead_id: lead.id, ai_paused: lead.ai_paused, ai_paused_until: lead.ai_paused_until };
 }
 
-async function runProperty(context: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
+async function runProperty(
+	context: IExecuteFunctions,
+	operation: string,
+	itemIndex: number,
+): Promise<IDataObject | IDataObject[]> {
+	if (operation === 'getMany') {
+		return await getMany(context, itemIndex, '/properties');
+	}
 	const reference = String(context.getNodeParameter('reference', itemIndex)).trim();
 	const simplify = context.getNodeParameter('simplify', itemIndex, true);
 	let page: IDataObject;
@@ -253,7 +267,7 @@ async function runItem(
 		case 'aiControl':
 			return await runAiControl(context, operation, itemIndex);
 		case 'property':
-			return await runProperty(context, itemIndex);
+			return await runProperty(context, operation, itemIndex);
 		default:
 			throw new NodeOperationError(context.getNode(), `Unknown resource: ${resource}`, { itemIndex });
 	}
