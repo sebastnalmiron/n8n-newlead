@@ -249,19 +249,19 @@ describe('checkExists', () => {
 		expect(request).not.toHaveBeenCalled();
 	});
 
-	it('deletes its endpoint left at an old domain with the same path', async () => {
+	it('never deletes its stored endpoint left at another URL with the same path: it warns and forgets it', async () => {
 		const old = 'https://old.example.com/webhook/0b5c2d3e-0000-4000-8000-000000000001/webhook';
-		const { context, request, staticData } = hookContext(
+		const { context, request, staticData, warn } = hookContext(
 			TEXT_PARAMS,
-			[list(endpoint(OURS, { url: old })), { deleted: true }],
-			{ staticData: { endpointId: OURS, secret: SECRET } },
+			[list(endpoint(OURS, { url: old }))],
+			{ staticData: { endpointId: OURS, secret: SECRET, url: old } },
 		);
 		expect(await checkEndpoint(context)).toBe(false);
-		expect(request).toHaveBeenCalledTimes(2);
-		expect(sent(request, 1)).toMatchObject({
-			method: 'DELETE',
-			url: `https://api.newlead.ai/v1/webhook_endpoints/${OURS}`,
-		});
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(warn).toHaveBeenCalledWith(
+			'[NewleadTrigger] The stored webhook endpoint points at another URL; it was left in place',
+			{ endpointId: OURS, url: old },
+		);
 		expect(staticData).toEqual({});
 	});
 
@@ -329,7 +329,7 @@ describe('create', () => {
 				description: 'n8n · Leads to CRM',
 			},
 		});
-		expect(staticData).toEqual({ endpointId: OURS, secret: SECRET });
+		expect(staticData).toEqual({ endpointId: OURS, secret: SECRET, url: NODE_URL });
 	});
 
 	it('a test listener says so in the description, cut to 200 characters', async () => {
@@ -368,6 +368,16 @@ describe('create', () => {
 		expect(error).toMatchObject({ description: 'subscription_inactive message Request ID: req_1.' });
 	});
 
+	it('a network error keeps a readable message and does not blank the description', async () => {
+		const { context } = hookContext(TEXT_PARAMS, [
+			Object.assign(new Error('connect ECONNREFUSED 1.2.3.4:443'), { code: 'ECONNREFUSED' }),
+		]);
+		const error = (await createEndpoint(context).catch((e: unknown) => e)) as NodeApiError;
+		expect(error).toBeInstanceOf(NodeApiError);
+		expect(error.description).not.toBe('');
+		expect(error.message).toContain('refused the connection');
+	});
+
 	it('without events it fails before any request', async () => {
 		const { context, request } = hookContext({ ...TEXT_PARAMS, textEvents: [] }, [{}]);
 		await expect(createEndpoint(context)).rejects.toThrow('Choose at least one event');
@@ -378,7 +388,7 @@ describe('create', () => {
 describe('delete', () => {
 	it('deletes only its own endpoint on a production URL and forgets the secret', async () => {
 		const { context, request, staticData } = hookContext(TEXT_PARAMS, [{ deleted: true }], {
-			staticData: { endpointId: OURS, secret: SECRET },
+			staticData: { endpointId: OURS, secret: SECRET, url: NODE_URL },
 		});
 		expect(await deleteEndpoint(context)).toBe(true);
 		expect(request).toHaveBeenCalledTimes(1);
@@ -386,6 +396,22 @@ describe('delete', () => {
 			method: 'DELETE',
 			url: `https://api.newlead.ai/v1/webhook_endpoints/${OURS}`,
 		});
+		expect(staticData).toEqual({});
+	});
+
+	it.each([
+		['another URL', { url: OTHER_URL }],
+		['no URL', {}],
+	])('leaves a stored endpoint created for %s in place, warns and forgets it', async (_label, extra) => {
+		const { context, request, staticData, warn } = hookContext(TEXT_PARAMS, [{ deleted: true }], {
+			staticData: { endpointId: OURS, secret: SECRET, ...extra },
+		});
+		expect(await deleteEndpoint(context)).toBe(true);
+		expect(request).not.toHaveBeenCalled();
+		expect(warn).toHaveBeenCalledWith(
+			'[NewleadTrigger] Left the stored webhook endpoint in place: it was created for another URL',
+			{ endpointId: OURS, url: (extra as { url?: string }).url ?? null },
+		);
 		expect(staticData).toEqual({});
 	});
 
@@ -414,7 +440,7 @@ describe('delete', () => {
 			TEXT_PARAMS,
 			[apiError('404', 'resource_not_found')],
 			{
-				staticData: { endpointId: OURS, secret: SECRET },
+				staticData: { endpointId: OURS, secret: SECRET, url: NODE_URL },
 			},
 		);
 		expect(await deleteEndpoint(context)).toBe(true);
@@ -426,7 +452,7 @@ describe('delete', () => {
 			TEXT_PARAMS,
 			[apiError('402', 'subscription_inactive')],
 			{
-				staticData: { endpointId: OURS, secret: SECRET },
+				staticData: { endpointId: OURS, secret: SECRET, url: NODE_URL },
 			},
 		);
 		expect(await deleteEndpoint(context)).toBe(false);
@@ -434,7 +460,7 @@ describe('delete', () => {
 			'[NewleadTrigger] Could not delete the webhook endpoints of this node',
 			expect.objectContaining({ error: expect.stringContaining('subscription_inactive') }),
 		);
-		expect(staticData).toEqual({ endpointId: OURS, secret: SECRET });
+		expect(staticData).toEqual({ endpointId: OURS, secret: SECRET, url: NODE_URL });
 	});
 });
 

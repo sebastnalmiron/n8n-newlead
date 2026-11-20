@@ -8,6 +8,8 @@ import { v1Request, v1RequestAll } from '../Newlead/v2/transport';
 export interface EndpointState {
 	endpointId?: string;
 	secret?: string;
+	/** The URL the endpoint was created for: only then is it this node's to delete. */
+	url?: string;
 }
 
 interface EndpointConfig {
@@ -33,6 +35,7 @@ function stateOf(context: IHookFunctions): EndpointState & IDataObject {
 function forget(state: EndpointState): void {
 	delete state.endpointId;
 	delete state.secret;
+	delete state.url;
 }
 
 /** This node's webhook URL, its agent and its events, as the API takes them. */
@@ -59,7 +62,8 @@ function withHint(error: unknown, node: INode): NodeApiError {
 	const details = apiErrorOf(apiError);
 	// n8n shows only the description of a NodeApiError, so the API's own message has to be in it
 	const lead = HINTS[details?.code ?? ''] ?? details?.message;
-	apiError.description = [lead, apiError.description].filter(Boolean).join(' ');
+	// an error without a message of the API keeps its description: n8n shows '' as an empty toast
+	if (lead) apiError.description = [lead, apiError.description].filter(Boolean).join(' ');
 	return apiError;
 }
 
@@ -69,15 +73,6 @@ function withHint(error: unknown, node: INode): NodeApiError {
  */
 function atUrl(endpoints: IDataObject[], config: EndpointConfig): IDataObject[] {
 	return endpoints.filter((endpoint) => endpoint.url === config.url);
-}
-
-/** The path of a URL (it carries the node's webhook id), or null when it cannot be parsed. */
-function pathOf(url: unknown): string | null {
-	try {
-		return new URL(String(url)).pathname;
-	} catch {
-		return null;
-	}
 }
 
 /** Deletes an endpoint; one that is already gone counts as deleted. */
@@ -137,10 +132,13 @@ export async function checkEndpoint(context: IHookFunctions): Promise<boolean> {
 		if (endpoint !== own) await removeEndpoint(context, endpoint.id as string);
 	}
 	if (!own) {
-		// the stored endpoint on an old domain (WEBHOOK_URL changed) with this node's path is this node's too
+		// at another URL it may be production's, if this n8n database is a copy: leave it and forget it
 		const stored = all.find((endpoint) => endpoint.id === state.endpointId);
-		if (stored && stored.url !== config.url && pathOf(stored.url) === pathOf(config.url)) {
-			await removeEndpoint(context, stored.id as string);
+		if (stored && stored.url !== config.url) {
+			context.logger.warn(
+				'[NewleadTrigger] The stored webhook endpoint points at another URL; it was left in place',
+				{ endpointId: stored.id, url: stored.url },
+			);
 		}
 		forget(state);
 		return false;
@@ -189,11 +187,12 @@ export async function createEndpoint(context: IHookFunctions): Promise<boolean> 
 	const state = stateOf(context);
 	state.endpointId = endpoint.id;
 	state.secret = endpoint.secret;
+	state.url = config.url;
 	return true;
 }
 
 /**
- * Deletes this node's endpoint (the one in the static data); a 404 counts as deleted. On an editor test
+ * Deletes this node's endpoint (the one in the static data, if it was created for this URL); a 404 counts as deleted. On an editor test
  * URL (`/webhook-test/`) it deletes every endpoint at the URL, which is transient and one per node.
  * Endpoints of a production URL that are not ours are left alone, since another workflow may share the
  * webhook id: the next activation (checkEndpoint) cleans them. It never throws: n8n is deactivating
@@ -203,7 +202,15 @@ export async function deleteEndpoint(context: IHookFunctions): Promise<boolean> 
 	const state = stateOf(context);
 	try {
 		const config = endpointConfig(context);
-		const ids = new Set<string>(state.endpointId ? [state.endpointId] : []);
+		const ids = new Set<string>();
+		if (state.endpointId && (state.url === config.url || config.url.includes('/webhook-test/'))) {
+			ids.add(state.endpointId);
+		} else if (state.endpointId) {
+			context.logger.warn(
+				'[NewleadTrigger] Left the stored webhook endpoint in place: it was created for another URL',
+				{ endpointId: state.endpointId, url: state.url ?? null },
+			);
+		}
 		if (config.url.includes('/webhook-test/')) {
 			const all = await v1RequestAll.call(context, '/webhook_endpoints');
 			for (const endpoint of atUrl(all, config)) ids.add(endpoint.id as string);
