@@ -1,7 +1,7 @@
 import { createHmac } from 'crypto';
 import { describe, expect, it } from 'vitest';
 
-import { parseSignatureHeader, verifySignature } from '../nodes/NewleadTrigger/signature';
+import { parseSignatureHeader, signatureFailure, verifySignature } from '../nodes/NewleadTrigger/signature';
 
 const SECRET = 'whsec_prueba';
 const BODY = Buffer.from('{"event":"lead.created","occurred_at":"2026-11-13T09:00:00.000Z"}');
@@ -63,5 +63,23 @@ describe('verifySignature', () => {
 		expect(verify(sign(NOW), { rawBody: undefined })).toBe(false);
 		expect(verify(sign(NOW), { secret: undefined })).toBe(false);
 		expect(verify(sign(NOW), { secret: '' })).toBe(false);
+	});
+});
+
+describe('signatureFailure', () => {
+	const failure = (header: unknown, overrides: { rawBody?: Buffer; secret?: unknown; nowSeconds?: number } = {}) =>
+		signatureFailure({ header, rawBody: BODY, secret: SECRET, nowSeconds: NOW, ...overrides });
+
+	it('is null for a valid delivery and names why it is not otherwise', () => {
+		expect(failure(sign(NOW))).toBeNull();
+		expect(failure(undefined)).toBe('missing_signature');
+		expect(failure(['t=1,v1=a'])).toBe('missing_signature');
+		expect(failure('t=abc')).toBe('malformed_signature');
+		expect(failure(sign(NOW), { secret: undefined })).toBe('missing_secret');
+		expect(failure(sign(NOW), { secret: '' })).toBe('missing_secret');
+		expect(failure(sign(NOW), { rawBody: undefined })).toBe('missing_raw_body');
+		expect(failure(sign(NOW - 301))).toBe('stale_timestamp:301s');
+		expect(failure(sign(NOW + 301))).toBe('stale_timestamp:-301s');
+		expect(failure(sign(NOW, BODY, 'whsec_otra'))).toBe('mismatch');
 	});
 });

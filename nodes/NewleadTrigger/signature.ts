@@ -17,26 +17,34 @@ export function parseSignatureHeader(header: unknown): { t: string; signature: s
 	return { t, signature };
 }
 
-/**
- * Whether a delivery comes from Newlead: the HMAC-SHA256 of `{t}.{raw body}`, keyed with the whole
- * endpoint secret (`whsec_…`, prefix included), compared in constant time, with `t` at most five
- * minutes from `nowSeconds`. The raw body must be the bytes that arrived: serializing the parsed
- * JSON again changes them.
- */
-export function verifySignature(input: {
+interface SignatureInput {
 	header: unknown;
 	rawBody: Buffer | undefined;
 	secret: unknown;
 	nowSeconds: number;
-}): boolean {
+}
+
+/**
+ * Why a delivery does not come from Newlead, or null when it does: the HMAC-SHA256 of `{t}.{raw body}`,
+ * keyed with the whole endpoint secret (`whsec_…`, prefix included), compared in constant time, with `t`
+ * at most five minutes from `nowSeconds`. The raw body must be the bytes that arrived: serializing the
+ * parsed JSON again changes them.
+ */
+export function signatureFailure(input: SignatureInput): string | null {
+	if (typeof input.header !== 'string') return 'missing_signature';
 	const parsed = parseSignatureHeader(input.header);
-	if (!parsed || !input.rawBody || typeof input.secret !== 'string' || input.secret === '') {
-		return false;
-	}
-	if (Math.abs(input.nowSeconds - Number(parsed.t)) > SIGNATURE_TOLERANCE_SECONDS) return false;
+	if (!parsed) return 'malformed_signature';
+	if (typeof input.secret !== 'string' || input.secret === '') return 'missing_secret';
+	if (!input.rawBody) return 'missing_raw_body';
+	const skew = input.nowSeconds - Number(parsed.t);
+	if (Math.abs(skew) > SIGNATURE_TOLERANCE_SECONDS) return `stale_timestamp:${skew}s`;
 	const expected = createHmac('sha256', input.secret)
 		.update(`${parsed.t}.`)
 		.update(input.rawBody)
 		.digest();
-	return timingSafeEqual(expected, Buffer.from(parsed.signature, 'hex'));
+	return timingSafeEqual(expected, Buffer.from(parsed.signature, 'hex')) ? null : 'mismatch';
+}
+
+export function verifySignature(input: SignatureInput): boolean {
+	return signatureFailure(input) === null;
 }

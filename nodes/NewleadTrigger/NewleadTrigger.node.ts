@@ -9,7 +9,7 @@ import { NodeConnectionTypes } from 'n8n-workflow';
 
 import { getTextAgents, getVoiceAgents } from '../Newlead/v2/agents';
 import { triggerProperties } from './descriptions';
-import { verifySignature } from './signature';
+import { signatureFailure } from './signature';
 import { checkEndpoint, createEndpoint, deleteEndpoint, type EndpointState } from './subscription';
 
 export class NewleadTrigger implements INodeType {
@@ -55,14 +55,17 @@ export class NewleadTrigger implements INodeType {
 		const headers = this.getHeaderData();
 		const delivery = typeof headers['x-webhook-delivery'] === 'string' ? headers['x-webhook-delivery'] : null;
 		const { secret } = this.getWorkflowStaticData('node') as EndpointState;
-		const valid = verifySignature({
+		const reason = signatureFailure({
 			header: headers['x-webhook-signature'],
 			rawBody: request.rawBody,
 			secret,
 			nowSeconds: Math.floor(Date.now() / 1000),
 		});
-		if (!valid) {
-			this.logger.warn('[NewleadTrigger] Rejected a delivery with an invalid signature', { delivery });
+		if (reason) {
+			this.logger.warn('[NewleadTrigger] Rejected a delivery with an invalid signature', {
+				delivery,
+				reason,
+			});
 			this.getResponseObject().status(401).json({ error: 'invalid_signature' });
 			return { noWebhookResponse: true };
 		}

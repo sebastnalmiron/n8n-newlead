@@ -62,7 +62,13 @@ const list = (...endpoints: IDataObject[]) => ({
 function hookContext(
 	params: Record<string, unknown>,
 	responses: unknown[],
-	options: { staticData?: IDataObject; url?: string; mode?: string; workflowName?: string } = {},
+	options: {
+		staticData?: IDataObject;
+		url?: string;
+		mode?: string;
+		workflowName?: string;
+		activationMode?: string;
+	} = {},
 ) {
 	let call = 0;
 	const request = vi.fn(async () => {
@@ -79,6 +85,7 @@ function hookContext(
 		getWorkflowStaticData: () => staticData,
 		getWorkflow: () => ({ id: 'wf-1', name: options.workflowName ?? 'Leads to CRM', active: true }),
 		getMode: () => options.mode ?? 'trigger',
+		getActivationMode: () => options.activationMode ?? 'activate',
 		getNode: () => node,
 		getCredentials: async () => ({ baseUrl: 'https://api.newlead.ai' }),
 		logger: { warn },
@@ -236,10 +243,72 @@ describe('checkExists', () => {
 		const error = await checkEndpoint(context).catch((e: unknown) => e);
 		expect(error).toBeInstanceOf(NodeOperationError);
 		expect(error).toMatchObject({
-			message: 'Newlead only sends events to https URLs',
-			description: expect.stringContaining('WEBHOOK_URL'),
+			message: expect.stringContaining('WEBHOOK_URL'),
 		});
+		expect((error as Error).message).toContain('http://localhost:5678/webhook/x/webhook');
 		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('deletes its endpoint left at an old domain with the same path', async () => {
+		const old = 'https://old.example.com/webhook/0b5c2d3e-0000-4000-8000-000000000001/webhook';
+		const { context, request, staticData } = hookContext(
+			TEXT_PARAMS,
+			[list(endpoint(OURS, { url: old })), { deleted: true }],
+			{ staticData: { endpointId: OURS, secret: SECRET } },
+		);
+		expect(await checkEndpoint(context)).toBe(false);
+		expect(request).toHaveBeenCalledTimes(2);
+		expect(sent(request, 1)).toMatchObject({
+			method: 'DELETE',
+			url: `https://api.newlead.ai/v1/webhook_endpoints/${OURS}`,
+		});
+		expect(staticData).toEqual({});
+	});
+
+	it('does not delete the stored id when its URL has another path, it only forgets it', async () => {
+		const { context, request, staticData } = hookContext(
+			TEXT_PARAMS,
+			[list(endpoint(OURS, { url: OTHER_URL }))],
+			{ staticData: { endpointId: OURS, secret: SECRET } },
+		);
+		expect(await checkEndpoint(context)).toBe(false);
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(staticData).toEqual({});
+	});
+
+	it('does not delete a stored id whose URL cannot be parsed', async () => {
+		const { context, request } = hookContext(TEXT_PARAMS, [list(endpoint(OURS, { url: 'not a url' }))], {
+			staticData: { endpointId: OURS, secret: SECRET },
+		});
+		expect(await checkEndpoint(context)).toBe(false);
+		expect(request).toHaveBeenCalledTimes(1);
+	});
+
+	it('on n8n start, a failing list keeps the stored endpoint', async () => {
+		const { context, warn } = hookContext(TEXT_PARAMS, [apiError('500', 'internal_error')], {
+			activationMode: 'init',
+			staticData: { endpointId: OURS, secret: SECRET },
+		});
+		expect(await checkEndpoint(context)).toBe(true);
+		expect(warn).toHaveBeenCalledWith(
+			'[NewleadTrigger] Could not check the webhook endpoint on start; keeping the stored one',
+			expect.objectContaining({ endpointId: OURS }),
+		);
+	});
+
+	it('a failing list propagates on any other activation, or without a stored endpoint', async () => {
+		const stored = { endpointId: OURS, secret: SECRET };
+		for (const [activationMode, staticData] of [
+			['activate', stored],
+			['init', {}],
+			['init', { endpointId: OURS }],
+		] as const) {
+			const { context } = hookContext(TEXT_PARAMS, [apiError('500', 'internal_error')], {
+				activationMode,
+				staticData: { ...staticData },
+			});
+			await expect(checkEndpoint(context)).rejects.toBeInstanceOf(NodeApiError);
+		}
 	});
 });
 
@@ -292,11 +361,11 @@ describe('create', () => {
 		expect(error).toMatchObject({ description: expect.stringContaining('manage agents') });
 	});
 
-	it('an error without a hint keeps its own description', async () => {
+	it('an error without a hint puts the API message before its description', async () => {
 		const { context } = hookContext(TEXT_PARAMS, [apiError('402', 'subscription_inactive')]);
 		const error = await createEndpoint(context).catch((e: unknown) => e);
 		expect(error).toBeInstanceOf(NodeApiError);
-		expect(error).toMatchObject({ description: 'Request ID: req_1.' });
+		expect(error).toMatchObject({ description: 'subscription_inactive message Request ID: req_1.' });
 	});
 
 	it('without events it fails before any request', async () => {
@@ -376,7 +445,7 @@ function signed(body: string, secret = SECRET, t = Math.floor(Date.now() / 1000)
 }
 
 function webhookContext(
-	options: { body?: string; signature?: string; staticData?: IDataObject; rawBodyMissing?: boolean } = {},
+	options: { body?: string; signature?: string | null; staticData?: IDataObject; rawBodyMissing?: boolean } = {},
 ) {
 	const body = options.body ?? BODY;
 	const raw = Buffer.from(body);
@@ -392,7 +461,9 @@ function webhookContext(
 		getRequestObject: () => request,
 		getResponseObject: () => response,
 		getHeaderData: () => ({
-			'x-webhook-signature': options.signature ?? signed(body),
+			...(options.signature === null
+				? {}
+				: { 'x-webhook-signature': options.signature ?? signed(body) }),
 			'x-webhook-event': 'lead.created',
 			'x-webhook-delivery': 'dlv-1',
 		}),
@@ -451,19 +522,25 @@ describe('webhook', () => {
 		expect(request.readRawBody).toHaveBeenCalled();
 	});
 
-	for (const [label, options] of [
-		['signed with another secret', { signature: signed(BODY, 'whsec_otra') }],
-		['without a secret in the static data', { staticData: {} }],
-		['older than five minutes', { signature: signed(BODY, SECRET, Math.floor(Date.now() / 1000) - 301) }],
+	for (const [label, options, reason] of [
+		['signed with another secret', { signature: signed(BODY, 'whsec_otra') }, 'mismatch'],
+		['without a secret in the static data', { staticData: {} }, 'missing_secret'],
+		['without a signature header', { signature: null }, 'missing_signature'],
+		[
+			'older than five minutes',
+			{ signature: signed(BODY, SECRET, Math.floor(Date.now() / 1000) - 301) },
+			/^stale_timestamp:30[12]s$/,
+		],
 	] as const) {
 		it(`a delivery ${label} gets a 401 and starts nothing`, async () => {
 			const { run, response, warn } = webhookContext(options);
 			expect(await run()).toEqual({ noWebhookResponse: true });
 			expect(response.status).toHaveBeenCalledWith(401);
 			expect(response.json).toHaveBeenCalledWith({ error: 'invalid_signature' });
-			expect(warn).toHaveBeenCalledWith('[NewleadTrigger] Rejected a delivery with an invalid signature', {
-				delivery: 'dlv-1',
-			});
+			expect(warn).toHaveBeenCalledWith(
+				'[NewleadTrigger] Rejected a delivery with an invalid signature',
+				{ delivery: 'dlv-1', reason: typeof reason === 'string' ? reason : expect.stringMatching(reason) },
+			);
 		});
 	}
 });
