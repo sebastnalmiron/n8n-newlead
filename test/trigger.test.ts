@@ -1,6 +1,9 @@
+import { createHmac } from 'crypto';
 import { NodeApiError, NodeOperationError, type IDataObject, type INode } from 'n8n-workflow';
 import { describe, expect, it, vi } from 'vitest';
 
+import { getTextAgents, getVoiceAgents } from '../nodes/Newlead/v2/agents';
+import { NewleadTrigger } from '../nodes/NewleadTrigger/NewleadTrigger.node';
 import {
 	checkEndpoint,
 	createEndpoint,
@@ -364,4 +367,103 @@ describe('delete', () => {
 		);
 		expect(staticData).toEqual({ endpointId: OURS, secret: SECRET });
 	});
+});
+
+const BODY = '{"event":"lead.created","occurred_at":"2026-11-20T10:00:00.000Z","lead":{"id":"l-1"}}';
+
+function signed(body: string, secret = SECRET, t = Math.floor(Date.now() / 1000)): string {
+	return `t=${t},v1=${createHmac('sha256', secret).update(`${t}.`).update(body).digest('hex')}`;
+}
+
+function webhookContext(
+	options: { body?: string; signature?: string; staticData?: IDataObject; rawBodyMissing?: boolean } = {},
+) {
+	const body = options.body ?? BODY;
+	const raw = Buffer.from(body);
+	const request: { rawBody?: Buffer; readRawBody: () => Promise<void> } = {
+		rawBody: options.rawBodyMissing ? undefined : raw,
+		readRawBody: vi.fn(async () => {
+			request.rawBody = raw;
+		}),
+	};
+	const response = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+	const warn = vi.fn();
+	const context = {
+		getRequestObject: () => request,
+		getResponseObject: () => response,
+		getHeaderData: () => ({
+			'x-webhook-signature': options.signature ?? signed(body),
+			'x-webhook-event': 'lead.created',
+			'x-webhook-delivery': 'dlv-1',
+		}),
+		getBodyData: () => JSON.parse(body) as IDataObject,
+		getWorkflowStaticData: () => options.staticData ?? { endpointId: OURS, secret: SECRET },
+		getNode: () => node,
+		logger: { warn },
+		helpers: {
+			returnJsonArray: (data: IDataObject | IDataObject[]) =>
+				(Array.isArray(data) ? data : [data]).map((json) => ({ json })),
+		},
+	} as never;
+	const run = () => new NewleadTrigger().webhook.call(context);
+	return { run, request, response, warn };
+}
+
+describe('NewleadTrigger', () => {
+	it('is a trigger that shares the agent pickers and the lifecycle', () => {
+		const trigger = new NewleadTrigger();
+		expect(trigger.description).toMatchObject({ name: 'newleadTrigger', group: ['trigger'], inputs: [] });
+		expect(trigger.methods.loadOptions.getTextAgents).toBe(getTextAgents);
+		expect(trigger.methods.loadOptions.getVoiceAgents).toBe(getVoiceAgents);
+	});
+
+	it('runs checkExists through the class', async () => {
+		const { context } = hookContext(TEXT_PARAMS, [list(endpoint(OURS))], {
+			staticData: { endpointId: OURS, secret: SECRET },
+		});
+		expect(await new NewleadTrigger().webhookMethods.default.checkExists.call(context)).toBe(true);
+	});
+});
+
+describe('webhook', () => {
+	it('a signed delivery starts the workflow with the event and its delivery id', async () => {
+		const { run, response } = webhookContext();
+		expect(await run()).toEqual({
+			workflowData: [
+				[
+					{
+						json: {
+							event: 'lead.created',
+							occurred_at: '2026-11-20T10:00:00.000Z',
+							lead: { id: 'l-1' },
+							delivery_id: 'dlv-1',
+						},
+					},
+				],
+			],
+		});
+		expect(response.status).not.toHaveBeenCalled();
+	});
+
+	it('reads the raw body when n8n has not read it yet', async () => {
+		const { run, request } = webhookContext({ rawBodyMissing: true });
+		expect((await run()).workflowData).toBeDefined();
+		expect(request.readRawBody).toHaveBeenCalled();
+	});
+
+	for (const [label, options] of [
+		['signed with another secret', { signature: signed(BODY, 'whsec_otra') }],
+		['without a secret in the static data', { staticData: {} }],
+		['older than five minutes', { signature: signed(BODY, SECRET, Math.floor(Date.now() / 1000) - 301) }],
+	] as const) {
+		it(`a delivery ${label} gets a 401 and starts nothing`, async () => {
+			const { run, response, warn } = webhookContext(options);
+			expect(await run()).toEqual({ noWebhookResponse: true });
+			expect(response.status).toHaveBeenCalledWith(401);
+			expect(response.json).toHaveBeenCalledWith({ error: 'invalid_signature' });
+			expect(warn).toHaveBeenCalledWith('[NewleadTrigger] Rejected a delivery with an invalid signature', {
+				delivery: 'dlv-1',
+			});
+		});
+	}
 });

@@ -1,7 +1,7 @@
 {
     "name": "n8n-nodes-newlead",
     "version": "2.0.1",
-    "description": "N8N community node for Newlead Platform - send templates, manage leads and properties, start voice calls, control AI responses",
+    "description": "N8N community node for Newlead Platform - send templates, manage leads and properties, start voice calls, control AI responses and start workflows on agent events",
     "license": "MIT",
     "homepage": "https://newlead.ai",
     "keywords": [
@@ -43,7 +43,8 @@
             "dist/credentials/NewleadApi.credentials.js"
         ],
         "nodes": [
-            "dist/nodes/Newlead/Newlead.node.js"
+            "dist/nodes/Newlead/Newlead.node.js",
+            "dist/nodes/NewleadTrigger/NewleadTrigger.node.js"
         ]
     },
     "devDependencies": {
