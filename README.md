@@ -73,6 +73,13 @@ For new n8n users, check out the [Try it out](https://docs.n8n.io/try-it-out/) d
 
 ## Version history
 
+### 2.0.1
+- Call: Get Many validates the Lead ID filter before the request
+- Call: Get Recording gives a clear error when the download fails (without the signed link) and refuses a link that is not https
+- Property: Create or Update checks the listing operation (sale or rent) before the request
+- Clearer descriptions for Address Visibility and for the Reference of Delete
+- The package no longer ships `tsconfig.tsbuildinfo`; it includes the MIT license file
+
 ### 2.0.0
 - New node version 2 on the public API (`/v1`); workflows saved with version 1 are unchanged
 - Call: Start (with the lead's name and variables), Get, Get Many and Get Recording

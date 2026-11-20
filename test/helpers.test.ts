@@ -455,6 +455,11 @@ describe('toApiDateTime', () => {
 		['2026-11-19T10:00:00.250', '2026-11-19T09:00:00.250Z'],
 		['2026-11-19T10:00:00+01:00', '2026-11-19T09:00:00.000Z'],
 		['2026-11-19T09:00:00Z', '2026-11-19T09:00:00.000Z'],
+		// Spring forward: 02:30 does not exist and is read as +01:00; 03:30 is already +02:00
+		['2026-03-29T02:30:00', '2026-03-29T01:30:00.000Z'],
+		['2026-03-29T03:30:00', '2026-03-29T01:30:00.000Z'],
+		// Fall back: 02:30 happens twice and the second one (+01:00) is read
+		['2026-10-25T02:30:00', '2026-10-25T01:30:00.000Z'],
 	])('reads %s in the workflow time zone (Europe/Madrid)', (input, expected) => {
 		expect(toApiDateTime(input, 'Europe/Madrid')).toBe(expected);
 	});
@@ -508,6 +513,16 @@ describe('recordingFile', () => {
 	});
 });
 
+describe('buildListQuery ids', () => {
+	it('checks an id filter before the request', () => {
+		const map = { leadId: { parameter: 'lead_id', id: 'lead ID' } };
+		expect(buildListQuery({ leadId: ' 00000000-0000-4000-8000-000000000001 ' }, map, 'UTC')).toEqual({
+			lead_id: '00000000-0000-4000-8000-000000000001',
+		});
+		expect(() => buildListQuery({ leadId: 'abc' }, map, 'UTC')).toThrow(/lead ID/);
+	});
+});
+
 describe('buildPropertyBody', () => {
 	const base = {
 		type: 'flat',
@@ -526,6 +541,12 @@ describe('buildPropertyBody', () => {
 		expect(() =>
 			buildPropertyBody({ ...base, listings: [{ listingOperation: 'sale', price: '198.000' }] }),
 		).toThrow(/198000/);
+	});
+
+	it.each(['sell', '', undefined, 'Sale'])('rejects the listing operation %j', (listingOperation) => {
+		expect(() =>
+			buildPropertyBody({ ...base, listings: [{ listingOperation, price: 100 }] }),
+		).toThrow(/sale or rent/);
 	});
 
 	it('skips listings without a price, and fails when none is left', () => {

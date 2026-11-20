@@ -740,9 +740,19 @@ const propertyProperties: INodeProperties[] = [
 		required: true,
 		default: '',
 		placeholder: 'REF-0001',
-		displayOptions: { show: { resource: ['property'], operation: ['upsert', 'delete'] } },
+		displayOptions: { show: { resource: ['property'], operation: ['upsert'] } },
 		description:
 			'Your reference for the property: 1 to 50 letters, digits, dots, hyphens or underscores. Create or Update replaces the whole property that has it, so a field left empty is cleared.',
+	},
+	{
+		displayName: 'Reference',
+		name: 'reference',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'REF-0001',
+		displayOptions: { show: { resource: ['property'], operation: ['delete'] } },
+		description: 'Your reference for the property: 1 to 50 letters, digits, dots, hyphens or underscores',
 	},
 	{
 		displayName: 'Type',
@@ -815,7 +825,7 @@ const propertyProperties: INodeProperties[] = [
 					{ name: 'Street', value: 'street', description: 'Street without the number' },
 				],
 				default: 'full',
-				description: 'How much of the address the agent tells leads',
+				description: 'How much of the address the agent tells leads. Without this field, the address is hidden.',
 			},
 			{
 				displayName: 'Agent Notes',

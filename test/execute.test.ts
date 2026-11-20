@@ -333,6 +333,23 @@ describe('Lead: Agent Type Voice', () => {
 		expect(sent(request, 1).url).toBe(`https://api.newlead.ai/v1/leads/${LEAD}`);
 	});
 
+	it('update by phone looks the lead up in the voice agent and patches it', async () => {
+		const { run, request } = setup(
+			{
+				...voice,
+				operation: 'update',
+				leadId: { mode: 'phone', value: '+34600111222' },
+				updateFields: { status: 'closed' },
+			},
+			[{ data: [{ id: LEAD, channel: 'voice' }] }, { id: LEAD }],
+		);
+		await run();
+		expect(sent(request, 0).qs).toEqual({ phone: '+34600111222', voice_agent_id: VOICE, limit: '100' });
+		expect(sent(request, 1).method).toBe('PATCH');
+		expect(sent(request, 1).url).toBe(`https://api.newlead.ai/v1/leads/${LEAD}`);
+		expect(sent(request, 1).body).toEqual({ status: 'closed' });
+	});
+
 	it('in a text agent the phone lookup still skips call leads', async () => {
 		const { run, request } = setup(
 			{
@@ -603,6 +620,17 @@ describe('Call', () => {
 		expect(request).not.toHaveBeenCalled();
 	});
 
+	it('getMany rejects a Lead ID filter that is not a UUID before any request', async () => {
+		const { run, request } = setup({
+			resource: 'call',
+			operation: 'getMany',
+			returnAll: true,
+			callFilters: { leadId: 'abc' },
+		});
+		await expect(run()).rejects.toThrow(/lead ID/);
+		expect(request).not.toHaveBeenCalled();
+	});
+
 	it('getMany sends the filters, the dates in UTC and the limit', async () => {
 		const { run, request } = setup(
 			{
@@ -681,6 +709,28 @@ describe('Call > Get Recording', () => {
 		expect(download).not.toHaveBeenCalled();
 	});
 
+	it('refuses a link that is not https and downloads nothing', async () => {
+		const { run, download } = setup(params, [
+			{ statusCode: 302, headers: { location: 'http://storage.example.com/a.ogg?sig=secret' }, body: '' },
+		]);
+		await expect(run()).rejects.toThrow('not https');
+		expect(download).not.toHaveBeenCalled();
+	});
+
+	it('wraps a failed download in a clear error that never carries the signed link', async () => {
+		const { run, download } = setup(params, [{ statusCode: 302, headers: { location: link }, body: '' }]);
+		download.mockRejectedValue(
+			Object.assign(new Error(`Request failed with status code 403 for ${link}`), { response: { status: 403 } }),
+		);
+		const error = await run().then(
+			() => undefined,
+			(caught: unknown) => caught as NodeOperationError,
+		);
+		expect(error).toBeInstanceOf(NodeOperationError);
+		expect(error?.message).toBe('The recording could not be downloaded from storage (status 403)');
+		expect(JSON.stringify([error?.message, error?.description])).not.toMatch(/sig=|blob\.core/);
+	});
+
 	it('rejects an invalid call id before any request', async () => {
 		const { run, request, download } = setup({ ...params, callId: '' });
 		await expect(run()).rejects.toThrow(/call ID/);
@@ -733,6 +783,39 @@ describe('Property > Create or Update and Delete', () => {
 		});
 		await expect(run()).rejects.toThrow(/listing/);
 		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('rejects a listing operation that is not sale or rent before any request', async () => {
+		const { run, request } = setup({
+			...upsert,
+			'listings.listing': [{ listingOperation: 'sell', price: 100, available: true }],
+		});
+		await expect(run()).rejects.toThrow(/sale or rent/);
+		expect(request).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		['PUT', upsert],
+		['DELETE', { resource: 'property', operation: 'delete', reference: 'REF-1' }],
+	])('surfaces the 404 of a %s with the API code and message', async (_method, params) => {
+		const { run, request } = setup(params);
+		request.mockRejectedValue(
+			new NodeApiError(node, {
+				message: 'Not Found',
+				httpCode: '404',
+				response: {
+					data: {
+						error: {
+							code: 'resource_not_found',
+							message: 'No property with that reference.',
+							param: 'reference',
+							request_id: 'req_4',
+						},
+					},
+				},
+			}),
+		);
+		await expect(run()).rejects.toThrow('resource_not_found: No property with that reference.');
 	});
 
 	it('rejects a reference that would be read as a path', async () => {

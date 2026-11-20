@@ -221,6 +221,8 @@ export function toApiDateTime(value: unknown, timeZone: string): string {
 export interface ListFilter {
 	parameter: string;
 	date?: boolean;
+	/** The filter is an id typed by hand: checked with assertId, under this label. */
+	id?: string;
 }
 
 /**
@@ -233,10 +235,11 @@ export function buildListQuery(
 	timeZone: string,
 ): IDataObject {
 	const query: IDataObject = {};
-	for (const [filter, { parameter, date }] of Object.entries(filterMap)) {
+	for (const [filter, { parameter, date, id }] of Object.entries(filterMap)) {
 		const value = filters[filter];
 		if (value === undefined || value === null || String(value).trim() === '') continue;
-		query[parameter] = date ? toApiDateTime(value, timeZone) : String(value).trim();
+		if (date) query[parameter] = toApiDateTime(value, timeZone);
+		else query[parameter] = id ? assertId(value, id) : String(value).trim();
 	}
 	return query;
 }
@@ -530,6 +533,15 @@ function compact(object: IDataObject): IDataObject {
 	return Object.fromEntries(Object.entries(object).filter(([, value]) => hasValue(value)));
 }
 
+/** The operation of a listing; it can come from an expression, so it is checked before the request. */
+function listingOperationOf(value: unknown): string {
+	const operation = typeof value === 'string' ? value.trim() : '';
+	if (operation !== 'sale' && operation !== 'rent') {
+		throw new Error(`The listing operation "${String(value ?? '')}" is not valid: it must be sale or rent`);
+	}
+	return operation;
+}
+
 /**
  * The body of PUT /v1/properties/{reference}. Empty fields are left out; the PUT replaces the whole
  * property, so the API clears them.
@@ -537,9 +549,8 @@ function compact(object: IDataObject): IDataObject {
 export function buildPropertyBody(input: PropertyBodyInput): IDataObject {
 	const listings = input.listings.flatMap((row) => {
 		const price = priceOf(row.price);
-		return price === undefined
-			? []
-			: [{ operation: row.listingOperation, price, available: row.available !== false }];
+		if (price === undefined) return [];
+		return [{ operation: listingOperationOf(row.listingOperation), price, available: row.available !== false }];
 	});
 	if (listings.length === 0) {
 		throw new Error('Add a listing with its price: sale, rent or both');

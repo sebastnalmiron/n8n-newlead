@@ -50,7 +50,7 @@ const LEAD_FILTERS: Record<string, ListFilter> = {
 /** Call > Get Many: each filter of the node and its query parameter in /v1. */
 const CALL_FILTERS: Record<string, ListFilter> = {
 	voiceAgentId: { parameter: 'voice_agent_id' },
-	leadId: { parameter: 'lead_id' },
+	leadId: { parameter: 'lead_id', id: 'lead ID' },
 	direction: { parameter: 'direction' },
 	status: { parameter: 'status' },
 	startedAfter: { parameter: 'started_after', date: true },
@@ -121,7 +121,7 @@ async function resolveLeadId(
 	// the widget. A voice agent's leads are all calls, looked up like the voice route does: agent and phone.
 	const leads = (page.data as IDataObject[]).filter(
 		(lead) =>
-			scope.voice_agent_id !== undefined || PHONE_LOOKUP_CHANNELS.includes(lead.channel as string),
+			scope[AGENT_SCOPE.voice.filter] !== undefined || PHONE_LOOKUP_CHANNELS.includes(lead.channel as string),
 	);
 	if (leads.length === 0) {
 		throw new NodeOperationError(context.getNode(), `No lead with phone ${value} in this agent`, {
@@ -353,6 +353,17 @@ async function runCall(
 	return await v1Request.call(context, 'GET', `/calls/${callId}`);
 }
 
+/** The HTTP status of a failed download, if the error carries one. */
+function downloadStatus(error: unknown): number | undefined {
+	const { response, status, httpCode } = (error ?? {}) as {
+		response?: { status?: unknown };
+		status?: unknown;
+		httpCode?: unknown;
+	};
+	const code = Number(response?.status ?? status ?? httpCode);
+	return Number.isInteger(code) && code >= 100 && code < 600 ? code : undefined;
+}
+
 /** Call > Get Recording: the audio as binary data, downloaded from the signed link without the API key. */
 async function downloadRecording(
 	context: IExecuteFunctions,
@@ -360,13 +371,30 @@ async function downloadRecording(
 ): Promise<INodeExecutionData> {
 	const callId = assertId(context.getNodeParameter('callId', itemIndex), 'call ID');
 	const link = await v1RedirectLocation.call(context, `/calls/${callId}/recording`);
-	// The signed link is its own permission: a plain request, so the key never reaches the storage
-	const response = (await context.helpers.httpRequest({
-		method: 'GET',
-		url: link,
-		encoding: 'arraybuffer',
-		returnFullResponse: true,
-	})) as { body: Buffer; headers: IDataObject };
+	if (!link.toLowerCase().startsWith('https://')) {
+		throw new NodeOperationError(context.getNode(), 'The API sent a recording link that is not https', {
+			itemIndex,
+			description: 'The recording was not downloaded.',
+		});
+	}
+	let response: { body: Buffer; headers: IDataObject };
+	try {
+		// The signed link is its own permission: a plain request, so the key never reaches the storage
+		response = (await context.helpers.httpRequest({
+			method: 'GET',
+			url: link,
+			encoding: 'arraybuffer',
+			returnFullResponse: true,
+		})) as { body: Buffer; headers: IDataObject };
+	} catch (error) {
+		// Built from the status only: the signed link must not end up in an error message
+		const status = downloadStatus(error);
+		throw new NodeOperationError(
+			context.getNode(),
+			`The recording could not be downloaded from storage${status ? ` (status ${status})` : ''}`,
+			{ itemIndex, description: 'Run the node again: the link to the recording lasts one hour.' },
+		);
+	}
 	const { fileName, mimeType } = recordingFile(link, callId, response.headers['content-type']);
 	const field = context.getNodeParameter('binaryPropertyName', itemIndex, 'data') as string;
 	// httpRequest with arraybuffer already gives a Buffer: copying it would double the memory
