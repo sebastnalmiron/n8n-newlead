@@ -1,6 +1,7 @@
 import type {
 	IDataObject,
 	IExecuteFunctions,
+	IHookFunctions,
 	IHttpRequestMethods,
 	IHttpRequestOptions,
 	ILoadOptionsFunctions,
@@ -18,7 +19,7 @@ export interface V1RequestOptions {
 	idempotencyKey?: string;
 }
 
-type RequestContext = IExecuteFunctions | ILoadOptionsFunctions;
+type RequestContext = IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions;
 
 interface FullResponse {
 	statusCode: number;

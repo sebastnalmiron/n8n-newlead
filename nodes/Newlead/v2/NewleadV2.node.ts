@@ -12,6 +12,7 @@ import type {
 } from 'n8n-workflow';
 import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
+import { getStandaloneVoiceAgents, getTextAgents, getVoiceAgents } from './agents';
 import { nodeProperties } from './descriptions';
 import {
 	assertId,
@@ -56,10 +57,6 @@ const CALL_FILTERS: Record<string, ListFilter> = {
 	startedAfter: { parameter: 'started_after', date: true },
 	startedBefore: { parameter: 'started_before', date: true },
 };
-
-function voiceAgentOptions(agents: IDataObject[]): INodePropertyOptions[] {
-	return agents.map((agent) => ({ name: agent.name as string, value: agent.id as string }));
-}
 
 function leadLabel(lead: IDataObject): string {
 	const contact = (lead.phone as string) || (lead.username ? `@${lead.username as string}` : '');
@@ -417,23 +414,9 @@ export class NewleadV2 implements INodeType {
 
 	methods = {
 		loadOptions: {
-			async getTextAgents(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-				const agents = await v1RequestAll.call(this, '/text_agents');
-				return agents.map((agent) => ({
-					name: agent.name as string,
-					value: agent.id as string,
-				}));
-			},
-
-			async getStandaloneVoiceAgents(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-				const agents = await v1RequestAll.call(this, '/voice_agents');
-				// A voice agent with a text agent has no leads of its own: they are the text agent's
-				return voiceAgentOptions(agents.filter((agent) => !agent.text_agent_id));
-			},
-
-			async getVoiceAgents(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-				return voiceAgentOptions(await v1RequestAll.call(this, '/voice_agents'));
-			},
+			getTextAgents,
+			getStandaloneVoiceAgents,
+			getVoiceAgents,
 
 			async getTemplates(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				const textAgentId = this.getCurrentNodeParameter('textAgentId') as string;
