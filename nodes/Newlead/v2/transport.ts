@@ -127,6 +127,11 @@ export async function v1RedirectLocation(this: IExecuteFunctions, path: string):
 	}
 	const location = response.headers?.location;
 	if (response.statusCode >= 300 && response.statusCode < 400 && typeof location === 'string' && location) {
+		if (!/^https:\/\//i.test(location)) {
+			throw new NodeOperationError(this.getNode(), 'The API sent a link that is not https', {
+				description: 'Nothing was downloaded.',
+			});
+		}
 		return location;
 	}
 	// With ignoreHttpStatusErrors an API error arrives as a response: it becomes the error any other request gives
@@ -138,4 +143,41 @@ export async function v1RedirectLocation(this: IExecuteFunctions, path: string):
 		httpCode: String(response.statusCode),
 		response: { data: response.body },
 	});
+}
+
+/** The HTTP status of a failed download, if the error carries one. */
+function downloadStatus(error: unknown): number | undefined {
+	const { response, status, httpCode } = (error ?? {}) as {
+		response?: { status?: unknown };
+		status?: unknown;
+		httpCode?: unknown;
+	};
+	const code = Number(response?.status ?? status ?? httpCode);
+	return Number.isInteger(code) && code >= 100 && code < 600 ? code : undefined;
+}
+
+/**
+ * The recording behind a signed link from v1RedirectLocation. The link is its own permission: a
+ * plain request, so the key never reaches the storage, and an error that never carries the link.
+ */
+export async function fetchRecording(
+	this: IExecuteFunctions,
+	link: string,
+	itemIndex: number,
+): Promise<{ body: Buffer; headers: IDataObject }> {
+	try {
+		return (await this.helpers.httpRequest({
+			method: 'GET',
+			url: link,
+			encoding: 'arraybuffer',
+			returnFullResponse: true,
+		})) as { body: Buffer; headers: IDataObject };
+	} catch (error) {
+		const status = downloadStatus(error);
+		throw new NodeOperationError(
+			this.getNode(),
+			`The recording could not be downloaded from storage${status ? ` (status ${status})` : ''}`,
+			{ itemIndex, description: 'Run the node again: the link to the recording lasts one hour.' },
+		);
+	}
 }
