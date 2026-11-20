@@ -3,19 +3,35 @@ import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 /** The events of a text agent (LEAD_WEBHOOK_EVENTS in the API), by name. */
 export const TEXT_EVENT_OPTIONS: INodePropertyOptions[] = [
 	{ name: 'Follow-Up Sent', value: 'follow_up.sent', description: 'A follow-up message goes out' },
-	{ name: 'Lead Appointment Booked', value: 'lead.appointment_booked', description: 'The agent books an appointment' },
+	{
+		name: 'Lead Appointment Booked',
+		value: 'lead.appointment_booked',
+		description: 'The agent books an appointment',
+	},
 	{ name: 'Lead Created', value: 'lead.created', description: 'A new lead arrives' },
 	{ name: 'Lead Handoff', value: 'lead.handoff', description: 'The agent notifies the team' },
-	{ name: 'Lead Qualified', value: 'lead.qualified', description: 'A lead completes the qualification' },
+	{
+		name: 'Lead Qualified',
+		value: 'lead.qualified',
+		description: 'A lead completes the qualification',
+	},
 	{ name: 'Message Failed', value: 'message.failed', description: 'A message to a lead fails' },
 	{ name: 'Message Received', value: 'message.received', description: 'A lead sends a message' },
 ];
 
 /** The events of a voice agent (CALL_WEBHOOK_EVENTS in the API), by name. */
 export const VOICE_EVENT_OPTIONS: INodePropertyOptions[] = [
-	{ name: 'Call Analyzed', value: 'call.analyzed', description: 'The variables extracted from a call are ready' },
+	{
+		name: 'Call Analyzed',
+		value: 'call.analyzed',
+		description: 'The variables extracted from a call are ready',
+	},
 	{ name: 'Call Ended', value: 'call.ended', description: 'A call ends' },
-	{ name: 'Call Rejected', value: 'call.rejected', description: 'A call is rejected before anyone handles it' },
+	{
+		name: 'Call Rejected',
+		value: 'call.rejected',
+		description: 'A call is rejected before anyone handles it',
+	},
 	{ name: 'Call Started', value: 'call.started', description: 'A call starts' },
 ];
 
@@ -29,7 +45,11 @@ export const triggerProperties: INodeProperties[] = [
 		type: 'options',
 		noDataExpression: true,
 		options: [
-			{ name: 'Text', value: 'text', description: 'Lead and message events: WhatsApp, Instagram, web chat' },
+			{
+				name: 'Text',
+				value: 'text',
+				description: 'Lead and message events: WhatsApp, Instagram, web chat',
+			},
 			{ name: 'Voice', value: 'voice', description: 'Call events' },
 		],
 		default: 'text',
@@ -43,7 +63,7 @@ export const triggerProperties: INodeProperties[] = [
 		default: '',
 		displayOptions: { show: TEXT },
 		description:
-				'The text agent whose events start the workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+			'The text agent whose events start the workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 	},
 	{
 		displayName: 'Voice Agent Name or ID',
@@ -54,7 +74,7 @@ export const triggerProperties: INodeProperties[] = [
 		default: '',
 		displayOptions: { show: VOICE },
 		description:
-				'The voice agent whose calls start the workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+			'The voice agent whose calls start the workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 	},
 	{
 		displayName: 'Events',
