@@ -39,6 +39,8 @@ Version 2 of the node (new nodes). Pick the agent first; every send and call car
 - **Property → Get by Reference**: find a property by Idealista listing code (full or its last 3+ digits) or your reference. With **Simplify** on (default) the output is flat and ready for template variables (`found`, `status`, `reference`, `price`, `url`, `city`, `province`, `candidates_count`…). **Property → Get Many**: the published properties, newest first, with their photos (`images`); **Return All** or a **Limit**.
 - **Property → Create or Update**: create a property with your own **Reference**, or replace the one that has it; a field left empty is cleared. **Type**, **Listings** (sale, rent or both, with price and availability), address, rooms, area, description, features, agent notes and image links (copied to Newlead). **Property → Delete**: by reference. Both only change properties created this way, never the ones imported from Idealista.
 
+**Newlead Trigger** (a separate node) starts the workflow when an agent sends an event. Pick **Agent Type**, the agent and the **Events**: lead created, qualified, appointment booked, handoff, follow-up sent, message received and message failed for a text agent; call started, rejected, ended and analyzed for a voice agent. Activating the workflow subscribes the node in Newlead and deactivating it unsubscribes it; publishing a change to the trigger subscribes it anew, with a new secret. If Newlead pauses the subscription after many failed deliveries in a row, turn it back on in the agent's Webhooks panel. Every delivery is signed and the node rejects any without a valid signature (the n8n host clock must be within 5 minutes). Each item is the event (`event`, `occurred_at` and its data) plus `delivery_id`, the same on every retry: to skip repeats, add **Remove Duplicates** with **Remove Items Processed in Previous Executions** on `delivery_id`. To try it, listen for a test event and press **Send test** on the endpoint «n8n test · <workflow>» in the agent's Webhooks panel. Your n8n must have a public https URL (`WEBHOOK_URL`), and the key a role that can manage agents. An agent takes up to 3 active endpoints, and listening for a test event in the editor uses one while it listens.
+
 Phone numbers need the country code: `612345678` is an error, `+34612345678` is valid. Dates picked in the node have no time zone: they are read in the workflow's time zone. Version 2 needs a subaccount API key and cannot be used as an AI agent tool. Not in version 2: lookup by WhatsApp ID, the `currency` and `date_time` template variables and `quick_reply` buttons.
 
 Retries: **Retry On Fail** normally does not send or call twice. Re-running a finished execution does, unless you set **Idempotency Key** (remembered 24 hours). With **On Error › Continue**, an error item carries `error` and `details` (`code`, `request_id`, `outcome_unknown`, `description`); if `outcome_unknown` is `true` the message or call may have gone out, so check before repeating.
@@ -72,6 +74,9 @@ For new n8n users, check out the [Try it out](https://docs.n8n.io/try-it-out/) d
 * [Newlead Documentation](https://newlead.ai)
 
 ## Version history
+
+### 2.1.0
+- New **Newlead Trigger** node: starts a workflow on the events of a text or voice agent, subscribes on activation and unsubscribes on deactivation, and verifies the signature of every delivery
 
 ### 2.0.1
 - Call: Get Many validates the Lead ID filter before the request
