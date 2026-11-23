@@ -8,7 +8,7 @@ Newlead is a WhatsApp CRM platform for managing leads, sending templates, and co
 
 ## 2.0.0
 
-The node now has two versions. Existing workflows keep version 1 and nothing changes for them today, but version 1 will stop working when the old routes stop accepting API keys (announced in advance, no date yet). New nodes use version 2, which talks to the public API (`/v1`) and sends an `Idempotency-Key` on every send. Version 2 needs a subaccount API key, cannot be used as an AI agent tool, and requires phone numbers with the country code. Migration guide: https://docs.newlead.ai/migrate-legacy-routes
+The node now has two versions. Version 1 (workflows saved before 2.0.0) calls the old routes, which stopped accepting API keys on November 23, 2026: those workflows fail until you move them. New nodes use version 2, which talks to the public API (`/v1`) and sends an `Idempotency-Key` on every send. Version 2 needs a subaccount API key, cannot be used as an AI agent tool, and requires phone numbers with the country code. Migration guide: https://docs.newlead.ai/migrate-legacy-routes
 
 [Installation](#installation)
 [Operations](#operations)
@@ -45,7 +45,7 @@ Phone numbers need the country code: `612345678` is an error, `+34612345678` is 
 
 Retries: **Retry On Fail** normally does not send or call twice. Re-running a finished execution does, unless you set **Idempotency Key** (remembered 24 hours). With **On Error › Continue**, an error item carries `error` and `details` (`code`, `request_id`, `outcome_unknown`, `description`); if `outcome_unknown` is `true` the message or call may have gone out, so check before repeating.
 
-Version 1 (workflows saved before 2.0.0) keeps working for now, but it calls the old routes, which will stop accepting API keys; we will announce it in advance, with no date yet. Move workflows to version 2: https://docs.newlead.ai/migrate-legacy-routes
+Version 1 (workflows saved before 2.0.0) stopped working on November 23, 2026: it calls the old routes, which no longer accept API keys. Move workflows to version 2: https://docs.newlead.ai/migrate-legacy-routes
 
 ## Credentials
 
