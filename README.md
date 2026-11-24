@@ -52,7 +52,7 @@ Version 1 (workflows saved before 2.0.0) stopped working on November 23, 2026: i
 You need a Newlead account and an API key of a subaccount:
 
 1. Sign up at https://dashboard.newlead.ai
-2. In the subaccount, create a key in **Settings › API**
+2. In the subaccount, create a key in **Settings › API keys**
 3. Create a **Newlead API** credential in n8n with that key
 
 The credential test calls `GET /v1/me`. An organization key fails it: version 2 needs a subaccount key.

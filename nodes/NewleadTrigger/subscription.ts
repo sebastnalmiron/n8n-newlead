@@ -25,7 +25,7 @@ const HINTS: Record<string, string> = {
 	webhook_endpoint_limit_reached:
 		"An agent takes up to 3 active webhook endpoints, and listening for a test event in the editor uses one while it listens. Delete one in the agent's Webhooks panel, or deactivate another workflow that listens to this agent.",
 	api_key_forbidden:
-		'Creating webhook endpoints needs a key whose role can manage agents. Create the key in Settings › API with a user that can configure agents.',
+		'Creating webhook endpoints needs a key whose role can manage agents. Create the key in Settings › API keys with a user that can configure agents.',
 };
 
 function stateOf(context: IHookFunctions): EndpointState & IDataObject {
