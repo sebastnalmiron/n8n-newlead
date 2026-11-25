@@ -82,7 +82,7 @@ function leadField(show: Record<string, string[]>): INodeProperties {
 				displayName: 'From List',
 				name: 'list',
 				type: 'list',
-				typeOptions: { searchListMethod: 'searchLeads', searchable: true },
+				typeOptions: { searchListMethod: 'searchLeads' },
 			},
 			{
 				displayName: 'By ID',

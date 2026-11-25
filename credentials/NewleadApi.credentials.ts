@@ -43,7 +43,8 @@ export class NewleadApi implements ICredentialType {
 
 	test: ICredentialTestRequest = {
 		request: {
-			baseURL: '={{$credentials.baseUrl}}',
+			// Without trailing slashes or a final /v1, like apiBaseUrl in the node
+			baseURL: '={{$credentials.baseUrl.replace(/(?:\\/+v1)?\\/*$/i, "")}}',
 			url: '/v1/me',
 			method: 'GET',
 			headers: {

@@ -1001,6 +1001,27 @@ describe('Dropdowns follow pagination', () => {
 			limit: '100',
 		});
 	});
+
+	it('searchLeads hands n8n the next cursor and asks for that page on scroll', async () => {
+		const searchLeads = new NewleadV2({} as never).methods.listSearch.searchLeads;
+		const current = { resource: 'message', textAgentId: AGENT };
+		const first = loadContext(
+			[{ data: [{ id: LEAD, name: 'Ana' }], has_more: true, next_cursor: 'c1' }],
+			current,
+		);
+		expect(await searchLeads.call(first.context)).toEqual({
+			results: [{ name: 'Ana', value: LEAD }],
+			paginationToken: 'c1',
+		});
+		const last = loadContext([{ data: [], has_more: false, next_cursor: null }], current);
+		expect(await searchLeads.call(last.context, '', 'c1')).toEqual({ results: [] });
+		expect(sent(last.request).qs).toEqual({
+			text_agent_id: AGENT,
+			limit: '100',
+			cursor: 'c1',
+		});
+	});
+
 	it('getVoiceAgents lists every voice agent, with or without a text agent', async () => {
 		const { context } = loadContext([
 			{ data: [{ id: 'v1', name: 'Solo', text_agent_id: null }], has_more: true, next_cursor: 'c1' },

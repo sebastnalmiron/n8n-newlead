@@ -27,8 +27,17 @@ interface FullResponse {
 	body: unknown;
 }
 
+/**
+ * The credential's Base URL without trailing slashes or a final /v1: pasting
+ * https://rest.newlead.ai/v1, as the API reference writes it, must not call /v1/v1. The
+ * credential test strips the same suffix.
+ */
+export function apiBaseUrl(baseUrl: string): string {
+	return baseUrl.replace(/(?:\/+v1)?\/*$/i, '');
+}
+
 function v1Url(baseUrl: string, path: string): string {
-	return `${baseUrl.replace(/\/+$/, '')}/v1${path}`;
+	return `${apiBaseUrl(baseUrl)}/v1${path}`;
 }
 
 /** The NodeApiError of a failed request, with the API's code, message and request id when the body has them. */

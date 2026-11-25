@@ -432,7 +432,15 @@ export class NewleadV2 implements INodeType {
 			},
 		},
 		listSearch: {
-			async searchLeads(this: ILoadOptionsFunctions): Promise<INodeListSearchResult> {
+			/**
+			 * The agent's leads, newest first, a page at a time as the list scrolls. GET /v1/leads has
+			 * no text filter, so the list is not searchable: by name means picking it from the list.
+			 */
+			async searchLeads(
+				this: ILoadOptionsFunctions,
+				_filter?: string,
+				paginationToken?: string,
+			): Promise<INodeListSearchResult> {
 				// Only Lead has Agent Type; Message and AI Control always work on text agents
 				const voice =
 					this.getCurrentNodeParameter('resource') === 'lead' &&
@@ -441,13 +449,18 @@ export class NewleadV2 implements INodeType {
 				const agentId = this.getCurrentNodeParameter(kind.parameter) as string;
 				if (!agentId) return { results: [] };
 				const page = await v1Request.call(this, 'GET', '/leads', {
-					query: { [kind.filter]: agentId, limit: LEAD_PICKER_LIMIT },
+					query: {
+						[kind.filter]: agentId,
+						limit: LEAD_PICKER_LIMIT,
+						...(paginationToken ? { cursor: paginationToken } : {}),
+					},
 				});
 				return {
 					results: (page.data as IDataObject[]).map((lead) => ({
 						name: leadLabel(lead),
 						value: lead.id as string,
 					})),
+					...(page.has_more === true && page.next_cursor ? { paginationToken: page.next_cursor } : {}),
 				};
 			},
 		},

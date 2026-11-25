@@ -1,14 +1,19 @@
 import { NodeApiError, NodeOperationError, type IDataObject, type INode } from 'n8n-workflow';
 import { describe, expect, it, vi } from 'vitest';
 
-import { v1RedirectLocation, v1Request, v1RequestAll } from '../nodes/Newlead/v2/transport';
+import {
+	apiBaseUrl,
+	v1RedirectLocation,
+	v1Request,
+	v1RequestAll,
+} from '../nodes/Newlead/v2/transport';
 
 const node = { name: 'Newlead', type: 'n8n-nodes-newlead.newlead', typeVersion: 2 } as INode;
 
-function setup(impl: (...args: unknown[]) => Promise<unknown>) {
+function setup(impl: (...args: unknown[]) => Promise<unknown>, baseUrl = 'https://api.newlead.ai') {
 	const request = vi.fn(impl);
 	const context = {
-		getCredentials: vi.fn().mockResolvedValue({ baseUrl: 'https://api.newlead.ai' }),
+		getCredentials: vi.fn().mockResolvedValue({ baseUrl }),
 		getNode: () => node,
 		helpers: { httpRequestWithAuthentication: request },
 	} as never;
@@ -86,12 +91,27 @@ describe('v1Request', () => {
 	});
 
 	it('does not double the slash when the base URL ends with one', async () => {
-		const { context, request } = setup(async () => ({}));
-		(context as unknown as { getCredentials: { mockResolvedValue: (v: unknown) => void } }).getCredentials.mockResolvedValue({
-			baseUrl: 'https://rest.newlead.ai/',
-		});
+		const { context, request } = setup(async () => ({}), 'https://rest.newlead.ai/');
 		await v1Request.call(context, 'GET', '/leads');
 		expect(request.mock.calls[0][1]).toMatchObject({ url: 'https://rest.newlead.ai/v1/leads' });
+	});
+});
+
+describe('apiBaseUrl', () => {
+	it.each([
+		['https://rest.newlead.ai', 'https://rest.newlead.ai'],
+		['https://rest.newlead.ai/', 'https://rest.newlead.ai'],
+		['https://rest.newlead.ai/v1', 'https://rest.newlead.ai'],
+		['https://rest.newlead.ai/v1/', 'https://rest.newlead.ai'],
+		['https://rest.newlead.ai/V1//', 'https://rest.newlead.ai'],
+		['https://rest.newlead.ai//v1', 'https://rest.newlead.ai'],
+		// Only one final /v1, and only a whole path segment
+		['https://rest.newlead.ai/v1/v1', 'https://rest.newlead.ai/v1'],
+		['https://proxy.example.com/newlead', 'https://proxy.example.com/newlead'],
+		['https://proxy.example.com/v10', 'https://proxy.example.com/v10'],
+		['https://proxy.example.com/api-v1', 'https://proxy.example.com/api-v1'],
+	])('%s → %s', (baseUrl, expected) => {
+		expect(apiBaseUrl(baseUrl)).toBe(expected);
 	});
 });
 
