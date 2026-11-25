@@ -6,6 +6,7 @@ import { NewleadV2 } from '../nodes/Newlead/v2/NewleadV2.node';
 
 const node = { id: 'node-1', name: 'Newlead', type: 'n8n-nodes-newlead.newlead', typeVersion: 2 } as INode;
 const AGENT = '11111111-1111-4111-8111-111111111111';
+const OTHER_AGENT = '33333333-3333-4333-8333-333333333333';
 const LEAD = '22222222-2222-4222-8222-222222222222';
 const VOICE = '55555555-5555-4555-8555-555555555555';
 const CALL = '44444444-4444-4444-8444-444444444444';
@@ -153,9 +154,11 @@ describe('Message > Send', () => {
 
 	it('does not send when the lead belongs to another agent', async () => {
 		const { run, request } = setup({ ...base, leadId: { mode: 'id', value: LEAD } }, [
-			{ id: LEAD, text_agent_id: '33333333-3333-4333-8333-333333333333' },
+			{ id: LEAD, text_agent_id: OTHER_AGENT },
 		]);
-		await expect(run()).rejects.toThrow(/does not belong to the selected text agent/);
+		await expect(run()).rejects.toThrow(
+			`The lead belongs to text agent ${OTHER_AGENT}, not to the selected agent`,
+		);
 		expect(request).toHaveBeenCalledTimes(1);
 	});
 
@@ -163,7 +166,7 @@ describe('Message > Send', () => {
 		const { run, request } = setup({ ...base, leadId: { mode: 'list', value: LEAD } }, [
 			{ id: LEAD, text_agent_id: null },
 		]);
-		await expect(run()).rejects.toThrow(/does not belong to the selected text agent/);
+		await expect(run()).rejects.toThrow('The lead does not belong to the selected agent');
 		expect(request).toHaveBeenCalledTimes(1);
 	});
 
@@ -246,7 +249,104 @@ describe('Message > Send: lead by phone and channel', () => {
 	});
 });
 
+describe('Message > Get and Get Many', () => {
+	const MESSAGE = '66666666-6666-4666-8666-666666666666';
+	const getMany = { resource: 'message', operation: 'getMany', textAgentId: AGENT };
+
+	it('get reads the message by id, without key', async () => {
+		const { run, request } = setup({ resource: 'message', operation: 'get', messageId: ` ${MESSAGE} ` }, [
+			{ id: MESSAGE, status: 'delivered' },
+		]);
+		const [result] = await run();
+		expect(sent(request)).toEqual({
+			method: 'GET',
+			url: `https://api.newlead.ai/v1/messages/${MESSAGE}`,
+			json: true,
+		});
+		expect(result[0].json.status).toBe('delivered');
+	});
+
+	it('get with an invalid id fails before any request', async () => {
+		const { run, request } = setup({ resource: 'message', operation: 'get', messageId: 'abc' });
+		await expect(run()).rejects.toThrow(/message ID/);
+		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('getMany lists the messages of a lead by id up to the limit, in one page', async () => {
+		const { run, request } = setup(
+			{ ...getMany, leadId: { mode: 'id', value: LEAD }, returnAll: false, limit: 10 },
+			[{ data: [{ id: 'm1' }, { id: 'm2' }], has_more: true, next_cursor: 'c1' }],
+		);
+		const [result] = await run();
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(sent(request)).toEqual({
+			method: 'GET',
+			url: `https://api.newlead.ai/v1/leads/${LEAD}/messages`,
+			json: true,
+			qs: { limit: '10' },
+		});
+		expect(result.map((item) => item.json.id)).toEqual(['m1', 'm2']);
+	});
+
+	it('getMany with return all follows the cursor', async () => {
+		const { run, request } = setup({ ...getMany, leadId: { mode: 'list', value: LEAD }, returnAll: true }, [
+			{ data: [{ id: 'm1' }], has_more: true, next_cursor: 'c1' },
+			{ data: [{ id: 'm2' }], has_more: false, next_cursor: null },
+		]);
+		const [result] = await run();
+		expect(request).toHaveBeenCalledTimes(2);
+		expect(sent(request, 0).qs).toEqual({ limit: '100' });
+		expect(sent(request, 1).qs).toEqual({ limit: '100', cursor: 'c1' });
+		expect(result.map((item) => item.json.id)).toEqual(['m1', 'm2']);
+	});
+
+	it('getMany by phone looks the lead up in the text agent, then lists its messages', async () => {
+		const { run, request } = setup(
+			{ ...getMany, leadId: { mode: 'phone', value: '+34 600 111 222' }, returnAll: false, limit: 5 },
+			[{ data: [{ id: LEAD, channel: 'whatsapp' }] }, { data: [{ id: 'm1' }] }],
+		);
+		await run();
+		expect(sent(request, 0).url).toBe('https://api.newlead.ai/v1/leads');
+		expect(sent(request, 0).qs).toEqual({ phone: '+34600111222', text_agent_id: AGENT, limit: '100' });
+		expect(sent(request, 1).url).toBe(`https://api.newlead.ai/v1/leads/${LEAD}/messages`);
+		expect(sent(request, 1).qs).toEqual({ limit: '5' });
+	});
+});
+
 describe('Lead', () => {
+	const remove = { resource: 'lead', operation: 'delete', textAgentId: AGENT, leadId: { mode: 'id', value: LEAD } };
+
+	it('delete checks that the lead is the agent\'s, then sends DELETE', async () => {
+		const { run, request } = setup(remove, [
+			{ id: LEAD, text_agent_id: AGENT },
+			{ object: 'lead', id: LEAD, deleted: true },
+		]);
+		const [result] = await run();
+		expect(request).toHaveBeenCalledTimes(2);
+		expect(sent(request, 0)).toEqual({
+			method: 'GET',
+			url: `https://api.newlead.ai/v1/leads/${LEAD}`,
+			json: true,
+		});
+		expect(sent(request, 1)).toEqual({
+			method: 'DELETE',
+			url: `https://api.newlead.ai/v1/leads/${LEAD}`,
+			json: true,
+		});
+		expect(result[0].json).toEqual({ object: 'lead', id: LEAD, deleted: true });
+	});
+
+	it('delete does not delete a lead of another agent', async () => {
+		const { run, request } = setup({ ...remove, leadId: { mode: 'list', value: LEAD } }, [
+			{ id: LEAD, text_agent_id: OTHER_AGENT },
+		]);
+		await expect(run()).rejects.toThrow(
+			`The lead belongs to text agent ${OTHER_AGENT}, not to the selected agent`,
+		);
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(sent(request).method).toBe('GET');
+	});
+
 	it('create posts with the key and leaves an empty name out', async () => {
 		const { run, request } = setup({
 			resource: 'lead',
@@ -934,7 +1034,10 @@ describe('Dropdowns follow pagination', () => {
 		} as never;
 		return { context, request };
 	}
-	const loadOptions = new NewleadV2({} as never).methods.loadOptions;
+	const {
+		loadOptions,
+		listSearch: { searchLeads },
+	} = new NewleadV2({} as never).methods;
 
 	it('getTextAgents returns agents from every page', async () => {
 		const { context, request } = loadContext([
@@ -986,7 +1089,6 @@ describe('Dropdowns follow pagination', () => {
 	});
 
 	it('searchLeads uses the voice agent in Lead with Agent Type Voice, and the text agent elsewhere', async () => {
-		const searchLeads = new NewleadV2({} as never).methods.listSearch.searchLeads;
 		const current = { agentType: 'voice', voiceAgentId: VOICE, textAgentId: AGENT };
 		const lead = loadContext([{ data: [{ id: LEAD, name: 'Ana' }] }], { ...current, resource: 'lead' });
 		await searchLeads.call(lead.context);
@@ -1003,7 +1105,6 @@ describe('Dropdowns follow pagination', () => {
 	});
 
 	it('searchLeads hands n8n the next cursor and asks for that page on scroll', async () => {
-		const searchLeads = new NewleadV2({} as never).methods.listSearch.searchLeads;
 		const current = { resource: 'message', textAgentId: AGENT };
 		const first = loadContext(
 			[{ data: [{ id: LEAD, name: 'Ana' }], has_more: true, next_cursor: 'c1' }],
@@ -1020,6 +1121,28 @@ describe('Dropdowns follow pagination', () => {
 			limit: '100',
 			cursor: 'c1',
 		});
+	});
+
+	it('searchLeads sends the typed text as search, also on the next pages', async () => {
+		const { context, request } = loadContext(
+			[{ data: [{ id: LEAD, name: 'Ana', phone: '+34600111222' }], has_more: false, next_cursor: null }],
+			{ resource: 'message', textAgentId: AGENT },
+		);
+		expect(await searchLeads.call(context, '  ana 600 ', 'c1')).toEqual({
+			results: [{ name: 'Ana (+34600111222)', value: LEAD }],
+		});
+		expect(sent(request).qs).toEqual({
+			text_agent_id: AGENT,
+			limit: '100',
+			search: 'ana 600',
+			cursor: 'c1',
+		});
+	});
+
+	it('searchLeads lists without search while the text is too short', async () => {
+		const { context, request } = loadContext([{ data: [] }], { resource: 'message', textAgentId: AGENT });
+		await searchLeads.call(context, 'a');
+		expect(sent(request).qs).toEqual({ text_agent_id: AGENT, limit: '100' });
 	});
 
 	it('getVoiceAgents lists every voice agent, with or without a text agent', async () => {

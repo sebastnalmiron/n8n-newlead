@@ -25,6 +25,7 @@ import {
 	errorDetails,
 	isTooManyMatches,
 	idempotencyKeyFor,
+	leadSearchTerm,
 	pickIdempotencyKey,
 	recordingFile,
 	simplifyProperties,
@@ -104,7 +105,7 @@ function leadScope(context: IExecuteFunctions, itemIndex: number, allowVoice = f
 async function resolveLeadId(
 	context: IExecuteFunctions,
 	itemIndex: number,
-	scope: IDataObject,
+	scope = leadScope(context, itemIndex),
 ): Promise<string> {
 	const locator = context.getNodeParameter('leadId', itemIndex) as IDataObject;
 	if (locator.mode !== 'phone') {
@@ -133,6 +134,37 @@ async function resolveLeadId(
 		);
 	}
 	return leads[0].id as string;
+}
+
+function leadAgent(lead: IDataObject): string | undefined {
+	if (lead.text_agent_id) return `text agent ${lead.text_agent_id as string}`;
+	if (lead.voice_agent_id) return `voice agent ${lead.voice_agent_id as string}`;
+	return undefined;
+}
+
+/**
+ * Like resolveLeadId, for operations that must not touch another agent's lead: the phone lookup
+ * already filters by agent, but a list or an ID may point at a lead of another one.
+ */
+async function resolveAgentLeadId(
+	context: IExecuteFunctions,
+	itemIndex: number,
+	scope = leadScope(context, itemIndex),
+): Promise<string> {
+	const leadId = await resolveLeadId(context, itemIndex, scope);
+	if ((context.getNodeParameter('leadId', itemIndex) as IDataObject).mode === 'phone') return leadId;
+	const lead = await v1Request.call(context, 'GET', `/leads/${leadId}`);
+	if (!Object.entries(scope).every(([field, agentId]) => lead[field] === agentId)) {
+		const owner = leadAgent(lead);
+		throw new NodeOperationError(
+			context.getNode(),
+			owner
+				? `The lead belongs to ${owner}, not to the selected agent`
+				: 'The lead does not belong to the selected agent',
+			{ itemIndex, description: 'Choose another lead, or the agent that owns this one.' },
+		);
+	}
+	return leadId;
 }
 
 async function sendTemplate(context: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
@@ -166,20 +198,7 @@ async function sendMessage(context: IExecuteFunctions, itemIndex: number): Promi
 	// Validate the own key first: it costs nothing, the lead check below is a request
 	const options = context.getNodeParameter('messageOptions', itemIndex, {}) as IDataObject;
 	const key = idempotencyKey(context, itemIndex, options);
-	const leadId = await resolveLeadId(context, itemIndex, leadScope(context, itemIndex));
-	const textAgentId = context.getNodeParameter('textAgentId', itemIndex) as string;
-	const locator = context.getNodeParameter('leadId', itemIndex) as IDataObject;
-	if (locator.mode !== 'phone') {
-		// The phone lookup already filters by agent; a list or an id may point at a lead of another one
-		const lead = await v1Request.call(context, 'GET', `/leads/${leadId}`);
-		if (lead.text_agent_id !== textAgentId) {
-			throw new NodeOperationError(
-				context.getNode(),
-				'The lead does not belong to the selected text agent',
-				{ itemIndex, description: 'Choose another lead, or the agent that owns this one.' },
-			);
-		}
-	}
+	const leadId = await resolveAgentLeadId(context, itemIndex);
 	return await v1Request.call(context, 'POST', '/messages', {
 		idempotencyKey: key,
 		body: {
@@ -205,6 +224,22 @@ async function getMany(
 		query: { ...query, limit: String(limit) },
 	});
 	return page.data as IDataObject[];
+}
+
+async function runMessage(
+	context: IExecuteFunctions,
+	operation: string,
+	itemIndex: number,
+): Promise<IDataObject | IDataObject[]> {
+	if (operation === 'send') {
+		return await sendMessage(context, itemIndex);
+	}
+	if (operation === 'getMany') {
+		const leadId = await resolveLeadId(context, itemIndex);
+		return await getMany(context, itemIndex, `/leads/${leadId}/messages`);
+	}
+	const messageId = assertId(context.getNodeParameter('messageId', itemIndex), 'message ID');
+	return await v1Request.call(context, 'GET', `/messages/${messageId}`);
 }
 
 async function runLead(
@@ -233,7 +268,8 @@ async function runLead(
 			...buildListQuery(filters, LEAD_FILTERS, context.getTimezone()),
 		});
 	}
-	const leadId = await resolveLeadId(context, itemIndex, scope);
+	const resolve = operation === 'delete' ? resolveAgentLeadId : resolveLeadId;
+	const leadId = await resolve(context, itemIndex, scope);
 	if (operation === 'update') {
 		const fields = context.getNodeParameter('updateFields', itemIndex, {}) as IDataObject;
 		const name = String(fields.name ?? '').trim();
@@ -251,7 +287,7 @@ async function runLead(
 		}
 		return await v1Request.call(context, 'PATCH', `/leads/${leadId}`, { body });
 	}
-	return await v1Request.call(context, 'GET', `/leads/${leadId}`);
+	return await v1Request.call(context, operation === 'delete' ? 'DELETE' : 'GET', `/leads/${leadId}`);
 }
 
 async function runAiControl(
@@ -259,7 +295,7 @@ async function runAiControl(
 	operation: string,
 	itemIndex: number,
 ): Promise<IDataObject> {
-	const leadId = await resolveLeadId(context, itemIndex, leadScope(context, itemIndex));
+	const leadId = await resolveLeadId(context, itemIndex);
 	if (operation === 'pause') {
 		const options = context.getNodeParameter('pauseOptions', itemIndex, {}) as IDataObject;
 		return await v1Request.call(context, 'POST', `/leads/${leadId}/pause_ai`, {
@@ -380,7 +416,7 @@ async function runItem(
 		case 'template':
 			return await sendTemplate(context, itemIndex);
 		case 'message':
-			return await sendMessage(context, itemIndex);
+			return await runMessage(context, operation, itemIndex);
 		case 'lead':
 			return await runLead(context, operation, itemIndex);
 		case 'aiControl':
@@ -433,12 +469,12 @@ export class NewleadV2 implements INodeType {
 		},
 		listSearch: {
 			/**
-			 * The agent's leads, newest first, a page at a time as the list scrolls. GET /v1/leads has
-			 * no text filter, so the list is not searchable: by name means picking it from the list.
+			 * The agent's leads, newest first, a page at a time as the list scrolls. The text typed in
+			 * the list goes as `search` (name, username or phone digits) once it reaches what the API takes.
 			 */
 			async searchLeads(
 				this: ILoadOptionsFunctions,
-				_filter?: string,
+				filter?: string,
 				paginationToken?: string,
 			): Promise<INodeListSearchResult> {
 				// Only Lead has Agent Type; Message and AI Control always work on text agents
@@ -448,10 +484,12 @@ export class NewleadV2 implements INodeType {
 				const kind = voice ? AGENT_SCOPE.voice : AGENT_SCOPE.text;
 				const agentId = this.getCurrentNodeParameter(kind.parameter) as string;
 				if (!agentId) return { results: [] };
+				const search = leadSearchTerm(filter);
 				const page = await v1Request.call(this, 'GET', '/leads', {
 					query: {
 						[kind.filter]: agentId,
 						limit: LEAD_PICKER_LIMIT,
+						...(search ? { search } : {}),
 						...(paginationToken ? { cursor: paginationToken } : {}),
 					},
 				});

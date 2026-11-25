@@ -258,6 +258,15 @@ export function assertId(value: unknown, label: string): string {
 	return id;
 }
 
+/**
+ * The `search` of GET /v1/leads for the text typed in the lead list, or undefined to list without
+ * it while it has fewer than the 2 characters the API takes (counted in code points, like Ajv).
+ */
+export function leadSearchTerm(filter: unknown): string | undefined {
+	const term = String(filter ?? '').trim();
+	return Array.from(term).length >= 2 ? term : undefined;
+}
+
 const IDEMPOTENCY_KEY_MAX = 255;
 
 /** The key the user chose (their CRM record id, say) wins over the generated one. */

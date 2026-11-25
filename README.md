@@ -2,7 +2,7 @@
 
 This is an n8n community node. It lets you use Newlead in your n8n workflows.
 
-Newlead runs AI agents on WhatsApp, web chat and voice. With this node you send templates and messages, manage leads and properties, start calls, pause or resume the AI of a lead and start workflows on agent events.
+Newlead runs AI agents on WhatsApp, web chat and voice. With this node you send templates and messages, read messages, manage leads and properties, start calls, pause or resume the AI of a lead and start workflows on agent events.
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/sustainable-use-license/) workflow automation platform.
 
@@ -33,7 +33,8 @@ Version 2 of the node (new nodes). Pick the agent first; every send and call car
   - **Idempotency Key**: a stable key of your own, different for every send (see below).
   - **Lead Variables**: values saved on the lead; only the listed ones are added or changed.
 - **Message → Send**: send a text message to a lead chosen from the list, by ID or by phone number. The lead must already exist and belong to the chosen agent. Option: **Idempotency Key**.
-- **Lead → Create**: create a lead, or update it if the text agent already has one with that phone (a voice agent's leads are created by its calls). **Lead → Get / Update**: by list, ID or phone; update name, status and variables. **Lead → Get Many**: **Return All** or a **Limit**, filtered by **Status**, creation date and last activity (a message or a call). **Agent Type**: **Text** (default) or **Voice**, for the leads of a voice agent without a text agent. A voice agent linked to a text agent shares that agent's leads: pick **Text**.
+- **Message → Get**: a message by ID, with its delivery status (`status`, `sent_at`, `delivered_at`, `read_at`, `failed_at` and `error`). **Message → Get Many**: the messages of a lead, newest first, chosen like in **Send** (list, ID or phone); **Return All** or a **Limit**. Use it to check whether a send with an unknown outcome went out.
+- **Lead → Create**: create a lead, or update it if the text agent already has one with that phone (a voice agent's leads are created by its calls). **Lead → Get / Update / Delete**: by list, ID or phone; update name, status and variables. **Delete** works like deleting the lead in the dashboard: a soft delete that removes it from lists and from the API without erasing its data. Like **Message → Send**, it checks that a lead picked from the list or by ID belongs to the chosen agent, and deletes nothing if not. **Lead → Get Many**: **Return All** or a **Limit**, filtered by **Status**, creation date and last activity (a message or a call). **Agent Type**: **Text** (default) or **Voice**, for the leads of a voice agent without a text agent. A voice agent linked to a text agent shares that agent's leads: pick **Text**.
 - **AI Control → Pause / Resume / Get Status**: control the AI for a lead of a text agent (**Pause Options**: duration in minutes and reason). Pausing a lead that is already paused, or resuming one that is not, returns the lead as it is: an existing pause keeps its end.
 - **Call → Start**: the voice agent calls a phone number with country code; the lead is created if it does not exist. **Lead Name** and **Lead Variables** are saved on the lead before dialing, so the agent uses them during the call. Option: **Idempotency Key**. At most 5 calls per minute per API key: with more items, use **Loop Over Items** and **Wait**. **Call → Get**: a call with its transcript. **Call → Get Many**: **Return All** or a **Limit**, filtered by voice agent, lead, direction, status and start date. **Call → Get Recording**: the audio as a binary file (field `data` by default), downloaded from a signed link that expires in an hour; your API key is not sent there.
 - **Property → Get by Reference**: find a property by Idealista listing code (full or its last 3+ digits) or your reference. With **Simplify** on (default) the output is flat and ready for template variables (`found`, `status`, `reference`, `price`, `url`, `city`, `province`, `candidates_count`…). **Property → Get Many**: the published properties, newest first, with their photos (`images`); **Return All** or a **Limit**.
@@ -41,11 +42,11 @@ Version 2 of the node (new nodes). Pick the agent first; every send and call car
 
 **Newlead Trigger** (a separate node) starts the workflow when an agent sends an event. Pick **Agent Type**, the agent and the **Events**: lead created, qualified, appointment booked, handoff, follow-up sent, message received and message failed for a text agent; call started, rejected, ended and analyzed for a voice agent. Activating the workflow subscribes the node in Newlead and deactivating it unsubscribes it; publishing a change to the trigger subscribes it anew, with a new secret. If Newlead pauses the subscription after many failed deliveries in a row, turn it back on in the agent's Webhooks panel. Every delivery is signed and the node rejects any without a valid signature (the n8n host clock must be within 5 minutes). Each item is the event (`event`, `occurred_at` and its data) plus `delivery_id`, the same on every retry: to skip repeats, add **Remove Duplicates** with **Remove Items Processed in Previous Executions** on `delivery_id`. To try it, listen for a test event and press **Send test** on the endpoint «n8n test · <workflow>» in the agent's Webhooks panel. Your n8n must have a public https URL (`WEBHOOK_URL`), and the key a role that can manage agents. An agent takes up to 3 active endpoints, and listening for a test event in the editor uses one while it listens.
 
-The lead list (**From List**) shows the agent's leads, newest first, and loads more as you scroll; it has no search, so use **By Phone Number** or **By ID** to go straight to one.
+The lead list (**From List**) shows the agent's leads, newest first, and loads more as you scroll. Type 2 or more characters to search: every word must appear in the name, the Instagram or WhatsApp username or, for a word with digits, the phone (`600 111` finds `+34600111222`). Case does not matter but accents do: `garcia` does not find `García`.
 
 Phone numbers need the country code: `612345678` is an error, `+34612345678` is valid. Dates picked in the node have no time zone: they are read in the workflow's time zone. Version 2 cannot be used as an AI agent tool. Not in version 2: lookup by WhatsApp ID, the `currency` and `date_time` template variables and `quick_reply` buttons.
 
-Retries: **Retry On Fail** normally does not send or call twice. Re-running a finished execution does, unless you set **Idempotency Key** (remembered 24 hours). With **On Error › Continue**, an error item carries `error` and `details` (`code`, `request_id`, `outcome_unknown`, `description`); if `outcome_unknown` is `true` the message or call may have gone out, so check before repeating.
+Retries: **Retry On Fail** normally does not send or call twice. Re-running a finished execution does, unless you set **Idempotency Key** (remembered 24 hours). With **On Error › Continue**, an error item carries `error` and `details` (`code`, `request_id`, `outcome_unknown`, `description`); if `outcome_unknown` is `true` the message or call may have gone out, so check before repeating (for a message, with **Message → Get Many** on that lead).
 
 Version 1 (workflows saved before 2.0.0) stopped working on November 23, 2026: it calls the old routes, which no longer accept API keys. Move workflows to version 2: https://docs.newlead.ai/migrate-legacy-routes
 
@@ -76,6 +77,11 @@ For new n8n users, check out the [Try it out](https://docs.n8n.io/try-it-out/) d
 * [Newlead node documentation](https://docs.newlead.ai/n8n)
 
 ## Version history
+
+### 2.2.0
+- Message: **Get** (a message with its delivery status) and **Get Many** (the messages of a lead, newest first), to check a send with an unknown outcome
+- The lead list searches again: by name, username or phone digits, from 2 characters
+- Lead: **Delete**, the soft delete of the dashboard
 
 ### 2.1.1
 - The credential's **Base URL** works with or without a final `/v1`, in the node and in the credential test

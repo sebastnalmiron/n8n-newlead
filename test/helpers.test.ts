@@ -12,6 +12,7 @@ import {
 	buildTemplateComponents,
 	describeApiError,
 	idempotencyKeyFor,
+	leadSearchTerm,
 	pickIdempotencyKey,
 	recordingFile,
 	simplifyProperties,
@@ -178,6 +179,24 @@ describe('assertId', () => {
 	it('names the id it checks', () => {
 		expect(() => assertId('abc', 'call ID')).toThrow('The call ID "abc" is not valid');
 	});
+});
+
+describe('leadSearchTerm', () => {
+	it.each([
+		['  ana  ', 'ana'],
+		['a b', 'a b'],
+		['García 600', 'García 600'],
+		['60', '60'],
+	])('sends %j as %j', (filter, term) => {
+		expect(leadSearchTerm(filter)).toBe(term);
+	});
+
+	it.each([[undefined], [''], ['a'], ['  a  '], ['     '], ['😀']])(
+		'leaves %j out: fewer than 2 characters once trimmed',
+		(filter) => {
+			expect(leadSearchTerm(filter)).toBeUndefined();
+		},
+	);
 });
 
 describe('pickIdempotencyKey', () => {

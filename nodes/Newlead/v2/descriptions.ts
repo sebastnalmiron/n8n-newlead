@@ -70,6 +70,8 @@ function getManyFields(show: Record<string, string[]>): INodeProperties[] {
 	];
 }
 
+const UUID_PLACEHOLDER = '00000000-0000-4000-8000-000000000001';
+
 function leadField(show: Record<string, string[]>): INodeProperties {
 	return {
 		displayName: 'Lead',
@@ -82,13 +84,13 @@ function leadField(show: Record<string, string[]>): INodeProperties {
 				displayName: 'From List',
 				name: 'list',
 				type: 'list',
-				typeOptions: { searchListMethod: 'searchLeads' },
+				typeOptions: { searchListMethod: 'searchLeads', searchable: true },
 			},
 			{
 				displayName: 'By ID',
 				name: 'id',
 				type: 'string',
-				placeholder: '00000000-0000-4000-8000-000000000001',
+				placeholder: UUID_PLACEHOLDER,
 			},
 			{
 				displayName: 'By Phone Number',
@@ -140,10 +142,14 @@ const STATUS_OPTIONS = [
 
 const TEMPLATE_SEND = { resource: ['template'], operation: ['send'] };
 const MESSAGE_SEND = { resource: ['message'], operation: ['send'] };
+const MESSAGE_GET = { resource: ['message'], operation: ['get'] };
+const MESSAGE_GET_MANY = { resource: ['message'], operation: ['getMany'] };
+const MESSAGE_BY_LEAD = { resource: ['message'], operation: ['send', 'getMany'] };
 const LEAD_CREATE = { resource: ['lead'], operation: ['create'] };
 const LEAD_UPDATE = { resource: ['lead'], operation: ['update'] };
 const LEAD_GET_MANY = { resource: ['lead'], operation: ['getMany'] };
-const LEAD_BY_AGENT = { resource: ['lead'], operation: ['get', 'getMany', 'update'] };
+const LEAD_BY_AGENT = { resource: ['lead'], operation: ['delete', 'get', 'getMany', 'update'] };
+const LEAD_BY_ID = { resource: ['lead'], operation: ['delete', 'get', 'update'] };
 const PROPERTY_GET_MANY = { resource: ['property'], operation: ['getMany'] };
 
 const PROPERTY_UPSERT = { resource: ['property'], operation: ['upsert'] };
@@ -337,6 +343,18 @@ const messageProperties: INodeProperties[] = [
 		'message',
 		[
 			{
+				name: 'Get',
+				value: 'get',
+				description: 'Get a message with its delivery status',
+				action: 'Get a message',
+			},
+			{
+				name: 'Get Many',
+				value: 'getMany',
+				description: 'Get the messages of a lead, newest first',
+				action: 'Get many messages',
+			},
+			{
 				name: 'Send',
 				value: 'send',
 				description: 'Send a text message to a lead',
@@ -345,8 +363,19 @@ const messageProperties: INodeProperties[] = [
 		],
 		'send',
 	),
-	textAgentField(MESSAGE_SEND),
-	leadField(MESSAGE_SEND),
+	textAgentField(MESSAGE_BY_LEAD),
+	leadField(MESSAGE_BY_LEAD),
+	{
+		displayName: 'Message ID',
+		name: 'messageId',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: UUID_PLACEHOLDER,
+		displayOptions: { show: MESSAGE_GET },
+		description: 'The ID of the message, such as the one Message > Send or Template > Send returns',
+	},
+	...getManyFields(MESSAGE_GET_MANY),
 	{
 		displayName: 'Message',
 		name: 'message',
@@ -380,6 +409,13 @@ const leadProperties: INodeProperties[] = [
 				description: 'Create a lead; if the agent already has a lead with that phone, update it instead (a new name replaces the old one, variables are merged)',
 				action: 'Create a lead',
 			},
+			{
+				name: 'Delete',
+				value: 'delete',
+				description:
+					'Delete a lead like the dashboard does: a soft delete that removes it from lists and from the API without erasing its data',
+				action: 'Delete a lead',
+			},
 			{ name: 'Get', value: 'get', description: 'Get a lead', action: 'Get a lead' },
 			{
 				name: 'Get Many',
@@ -412,7 +448,7 @@ const leadProperties: INodeProperties[] = [
 		'getStandaloneVoiceAgents',
 		'The voice agent, among those without a text agent. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 	),
-	leadField({ resource: ['lead'], operation: ['get', 'update'] }),
+	leadField(LEAD_BY_ID),
 	{
 		displayName: 'Phone Number',
 		name: 'phoneNumber',
@@ -610,7 +646,7 @@ const callProperties: INodeProperties[] = [
 		type: 'string',
 		required: true,
 		default: '',
-		placeholder: '00000000-0000-4000-8000-000000000001',
+		placeholder: UUID_PLACEHOLDER,
 		displayOptions: { show: CALL_BY_ID },
 	},
 	{
@@ -906,7 +942,7 @@ export const nodeProperties: INodeProperties[] = [
 			{ name: 'AI Control', value: 'aiControl', description: 'Pause or resume the AI for a lead' },
 			{ name: 'Call', value: 'call', description: 'Start voice calls and read them' },
 			{ name: 'Lead', value: 'lead', description: 'Manage leads' },
-			{ name: 'Message', value: 'message', description: 'Send text messages' },
+			{ name: 'Message', value: 'message', description: 'Send text messages and read the messages of a lead' },
 			{ name: 'Property', value: 'property', description: 'Get, create, update and delete properties' },
 			{ name: 'Template', value: 'template', description: 'Send WhatsApp templates' },
 		],
