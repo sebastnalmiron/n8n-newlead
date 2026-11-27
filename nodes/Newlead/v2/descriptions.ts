@@ -481,6 +481,21 @@ const leadProperties: INodeProperties[] = [
 				options: STATUS_OPTIONS,
 				default: 'active',
 			},
+			{
+				displayName: 'Do Not Contact',
+				name: 'doNotContact',
+				type: 'boolean',
+				default: true,
+				description:
+					'Whether the lead asked not to be contacted. On marks every lead of the person; off resumes them.',
+			},
+			{
+				displayName: 'Do Not Contact Reason',
+				name: 'doNotContactReason',
+				type: 'string',
+				default: '',
+				description: 'Why the lead was opted out (up to 200 characters). Only with Do Not Contact on.',
+			},
 		],
 	},
 	variablesField({ resource: ['lead'], operation: ['create', 'update'] }),
@@ -531,6 +546,31 @@ const leadProperties: INodeProperties[] = [
 			},
 		],
 	},
+];
+
+const TEXT_AGENT_GET_LEAD_FIELDS = { resource: ['textAgent'], operation: ['getLeadFields'] };
+
+const textAgentProperties: INodeProperties[] = [
+	operationField(
+		'textAgent',
+		[
+			{
+				name: 'Get Lead Fields',
+				value: 'getLeadFields',
+				description: 'Get the lead fields of a text agent',
+				action: 'Get lead fields of a text agent',
+			},
+			{
+				name: 'Get Qualification',
+				value: 'getQualification',
+				description: 'Get the qualification questions of a text agent',
+				action: 'Get the qualification of a text agent',
+			},
+		],
+		'getLeadFields',
+	),
+	textAgentField({ resource: ['textAgent'] }),
+	...getManyFields(TEXT_AGENT_GET_LEAD_FIELDS),
 ];
 
 const aiControlProperties: INodeProperties[] = [
@@ -945,6 +985,7 @@ export const nodeProperties: INodeProperties[] = [
 			{ name: 'Message', value: 'message', description: 'Send text messages and read the messages of a lead' },
 			{ name: 'Property', value: 'property', description: 'Get, create, update and delete properties' },
 			{ name: 'Template', value: 'template', description: 'Send WhatsApp templates' },
+			{ name: 'Text Agent', value: 'textAgent', description: 'Read the lead fields and the qualification of a text agent' },
 		],
 		default: 'template',
 	},
@@ -954,4 +995,5 @@ export const nodeProperties: INodeProperties[] = [
 	...aiControlProperties,
 	...callProperties,
 	...propertyProperties,
+	...textAgentProperties,
 ];

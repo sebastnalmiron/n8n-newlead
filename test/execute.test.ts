@@ -398,6 +398,32 @@ describe('Lead', () => {
 		expect(request).not.toHaveBeenCalled();
 	});
 
+	const update = (updateFields: Params) => ({
+		resource: 'lead',
+		operation: 'update',
+		textAgentId: AGENT,
+		leadId: { mode: 'id', value: LEAD },
+		updateFields,
+	});
+
+	it('update sends do_not_contact and its reason', async () => {
+		const { run, request } = setup(update({ doNotContact: true, doNotContactReason: ' CRM: baja ' }));
+		await run();
+		expect(sent(request).body).toEqual({ do_not_contact: true, do_not_contact_reason: 'CRM: baja' });
+	});
+
+	it('update with a reason and without the opt-out fails before calling the API', async () => {
+		const { run, request } = setup(update({ doNotContactReason: 'CRM: baja' }));
+		await expect(run()).rejects.toThrow('A reason only goes with Do Not Contact on');
+		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('update with Do Not Contact off resumes the lead', async () => {
+		const { run, request } = setup(update({ doNotContact: false }));
+		await run();
+		expect(sent(request).body).toEqual({ do_not_contact: false });
+	});
+
 	it('get is a GET without key', async () => {
 		const { run, request } = setup({
 			resource: 'lead',
@@ -408,6 +434,49 @@ describe('Lead', () => {
 		await run();
 		expect(sent(request).method).toBe('GET');
 		expect(sent(request).headers).toBeUndefined();
+	});
+});
+
+describe('Text Agent', () => {
+	it('Get Lead Fields pages with a limit', async () => {
+		const { run, request } = setup(
+			{ resource: 'textAgent', operation: 'getLeadFields', textAgentId: AGENT, returnAll: false, limit: 20 },
+			[{ data: [{ key: 'city' }] }],
+		);
+		const [result] = await run();
+		expect(sent(request)).toMatchObject({
+			method: 'GET',
+			url: `https://api.newlead.ai/v1/text_agents/${AGENT}/lead_fields`,
+			qs: { limit: '20' },
+		});
+		expect(result.map((item) => item.json)).toEqual([{ key: 'city' }]);
+	});
+
+	it('Get Lead Fields follows the cursor with Return All', async () => {
+		const { run, request } = setup(
+			{ resource: 'textAgent', operation: 'getLeadFields', textAgentId: AGENT, returnAll: true },
+			[
+				{ data: [{ key: 'city' }], has_more: true, next_cursor: 'c1' },
+				{ data: [{ key: 'budget' }], has_more: false },
+			],
+		);
+		const [result] = await run();
+		expect(request).toHaveBeenCalledTimes(2);
+		expect(sent(request, 1).qs).toMatchObject({ cursor: 'c1' });
+		expect(result).toHaveLength(2);
+	});
+
+	it('Get Qualification is a GET of the qualification of the agent', async () => {
+		const { run, request } = setup(
+			{ resource: 'textAgent', operation: 'getQualification', textAgentId: AGENT },
+			[{ questions: [] }],
+		);
+		await run();
+		expect(sent(request)).toEqual({
+			method: 'GET',
+			url: `https://api.newlead.ai/v1/text_agents/${AGENT}/qualification`,
+			json: true,
+		});
 	});
 });
 

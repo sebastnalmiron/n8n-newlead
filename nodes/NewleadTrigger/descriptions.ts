@@ -9,6 +9,11 @@ export const TEXT_EVENT_OPTIONS: INodePropertyOptions[] = [
 		description: 'The agent books an appointment',
 	},
 	{ name: 'Lead Created', value: 'lead.created', description: 'A new lead arrives' },
+	{
+		name: 'Lead Do Not Contact Changed',
+		value: 'lead.do_not_contact_changed',
+		description: 'A lead is opted out or opted back in, from the API, the dashboard or the agent',
+	},
 	{ name: 'Lead Handoff', value: 'lead.handoff', description: 'The agent notifies the team' },
 	{
 		name: 'Lead Qualified',

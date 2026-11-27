@@ -274,20 +274,41 @@ async function runLead(
 		const fields = context.getNodeParameter('updateFields', itemIndex, {}) as IDataObject;
 		const name = String(fields.name ?? '').trim();
 		const variables = variablesOf(context, itemIndex);
+		const doNotContact = fields.doNotContact as boolean | undefined;
+		const reason = String(fields.doNotContactReason ?? '').trim();
+		if (reason && doNotContact !== true) {
+			throw new NodeOperationError(context.getNode(), 'A reason only goes with Do Not Contact on', {
+				itemIndex,
+			});
+		}
 		const body = {
 			...(name ? { name } : {}),
 			...(fields.status ? { status: fields.status } : {}),
 			...(variables ? { variables } : {}),
+			...(doNotContact !== undefined ? { do_not_contact: doNotContact } : {}),
+			...(reason ? { do_not_contact_reason: reason } : {}),
 		};
 		if (Object.keys(body).length === 0) {
 			throw new NodeOperationError(context.getNode(), 'Nothing to update', {
 				itemIndex,
-				description: 'Add a name, a status or a variable.',
+				description: 'Add a name, a status, a variable or Do Not Contact.',
 			});
 		}
 		return await v1Request.call(context, 'PATCH', `/leads/${leadId}`, { body });
 	}
 	return await v1Request.call(context, operation === 'delete' ? 'DELETE' : 'GET', `/leads/${leadId}`);
+}
+
+async function runTextAgent(
+	context: IExecuteFunctions,
+	operation: string,
+	itemIndex: number,
+): Promise<IDataObject | IDataObject[]> {
+	const agentId = assertId(context.getNodeParameter('textAgentId', itemIndex), 'text agent ID');
+	if (operation === 'getLeadFields') {
+		return await getMany(context, itemIndex, `/text_agents/${agentId}/lead_fields`);
+	}
+	return await v1Request.call(context, 'GET', `/text_agents/${agentId}/qualification`);
 }
 
 async function runAiControl(
@@ -425,6 +446,8 @@ async function runItem(
 			return await runCall(context, operation, itemIndex);
 		case 'property':
 			return await runProperty(context, operation, itemIndex);
+		case 'textAgent':
+			return await runTextAgent(context, operation, itemIndex);
 		default:
 			throw new NodeOperationError(context.getNode(), `Unknown resource: ${resource}`, { itemIndex });
 	}
